@@ -1,20 +1,21 @@
 while not game.IsLoaded do task.wait() end
 local pls = game.Players
 local lp = pls.LocalPlayer
+while not lp do task.wait() lp = game.Players.LocalPlayer end
 local char = lp.Character or lp.CharacterAdded:Wait() and lp.Character
 local mypp = char.PrimaryPart
 lp.CharacterAdded:Connect(function(character)
     char = character
     mypp = character.PrimaryPart
 end)
+local function getping() return lp:GetNetworkPing()*2000 end
 local CurCam = workspace.CurrentCamera
-while not lp do task.wait() lp = game.Players.LocalPlayer end
 task.wait(1)
-local add = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/Libs/additional.lua"))()
-local msg = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/Libs/msgs.lua"))()
-local vinp = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/Libs/vinp.lua"))()
+local add = loadstring(game:HttpGet("https://raw.githubusercontent.com/Dimanoname/Roblox-Luas/main/Libs/additional.lua"))()
+local msg = loadstring(game:HttpGet("https://raw.githubusercontent.com/Dimanoname/Roblox-Luas/main/Libs/msgs.lua"))()
+local vinp = loadstring(game:HttpGet("https://raw.githubusercontent.com/Dimanoname/Roblox-Luas/main/Libs/vinp.lua"))()
 local PlayerModule = lp.PlayerScripts:WaitForChild("PlayerModule")
-local Cameras, MouseLockController
+local cameras, MouseLockController
 if hookmetamethod then
     Cameras = require(PlayerModule):GetCameras()
     MouseLockController = Cameras.activeMouseLockController
@@ -34,7 +35,6 @@ local volleyball_ids = {
     ["96802054849934"] = true,
 }
 -- setclipboard(string.format("game:GetService('TeleportService'):TeleportToPlaceInstance(%s, '%s', game.Players.LocalPlayer)", tostring(game.PlaceId), game.JobId))
-print("Loading...")
 if volleyball_ids[tostring(game.PlaceId)] then
     while not lp:GetAttribute("User_Level") do task.wait() end
     task.wait(0.5)
@@ -44,7 +44,7 @@ if volleyball_ids[tostring(game.PlaceId)] then
     local Abilities = RP.Content.Ability
     local Rarities = require(RP.Content.Rarity)
     local closest = {nil, 1e99}
-    local lastserver, antishiftlock, superhitbox, targethl, setter_mode, ball
+    local lastserver, antishiftlock, superhitbox, targethl, setter_mode, spike_hack, ball, autoset, autospike
     local services = RP:WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_knit@1.7.0"):WaitForChild("knit"):WaitForChild("Services")
     -- Misc
     local toggle_advs = services.GameService.RF.ToggleAdvancedMoves
@@ -56,10 +56,12 @@ if volleyball_ids[tostring(game.PlaceId)] then
     local interact = services.BallService.RF.Interact
     local ping = services.EngineSchedulerService.RF.Ping
     local hitbox = services.BallService.RF.CreateHitbox
+    local spawnball = services.BallService.RF.SpawnBall
     -- Binds
     local claim_rewards = services.LevelService.RF.ClaimLevelRewards
     local request_teleport = services.PartyService.RF.RequestTeleport
     local return_to_lobby = services.GameService.RF.ReturnPartyToLobby
+    local high_ping = services.RankedService.RF.RetryServerVote
     -- Chat Commands
     local callbacks = {
         ["2v2"] = function() request_teleport:InvokeServer("Twos") end,
@@ -85,6 +87,7 @@ if volleyball_ids[tostring(game.PlaceId)] then
     }
     -- Functions
     local function getlvl() return tonumber(lp:GetAttribute("User_Level")) end
+    local function ingame() return lp:GetAttribute("Gameplay_InGame") end
     local function enableadvmoves() local text = pgui:WaitForChild("Interface"):WaitForChild("TeamSelection"):WaitForChild("Options"):WaitForChild("AdvancedMoves"):WaitForChild("Text"); if text.Text:find("OFF") then toggle_advs:InvokeServer() end end
     local function getball()
         for i,v in pairs(workspace:GetChildren()) do
@@ -92,13 +95,12 @@ if volleyball_ids[tostring(game.PlaceId)] then
         end
         return nil
     end
-    ball = getball()
     local function activeballid()
         return getball():GetAttribute("Id")
     end
     local function rotate_to_cam()
-        local hum = char.Humanoid
-        local prim = char.PrimaryPart
+        local hum = lp.Character.Humanoid
+        local prim = lp.Character.PrimaryPart
         local c1 = prim.CFrame
         local c2 = CurCam.CFrame
         prim.CFrame = CFrame.lookAlong(c1.Position, Vector3.new(c2.LookVector.x,c1.LookVector.y,c2.LookVector.z))
@@ -135,6 +137,7 @@ if volleyball_ids[tostring(game.PlaceId)] then
     local function update_hitbox(size, color)
         local hitbox
         color = color or Color3.fromRGB(180, 0, 255)
+        ball = getball()
         if ball then
             hitbox = ball:FindFirstChild("HitBox")
             if hitbox then 
@@ -157,52 +160,10 @@ if volleyball_ids[tostring(game.PlaceId)] then
         end
         return nil
     end
-    local function update_line(player)
-        if player.Character and player.Character:FindFirstChild("Humanoid") then
-            if not workspace:FindFirstChild("lines") then Instance.new("Folder", workspace).Name = "lines" end
-            local linesfold = workspace:FindFirstChild("lines")
-            if not player:GetAttribute("Gameplay_TiltDirection") then return end
-            local character = player.Character
-            if not char:FindFirstChild("Head") or not char:FindFirstChild("HumanoidRootPart") then return end
-            local head = char.Head
-            local hrp = char.PrimaryPart
-            local part
-            local tilt = player:GetAttribute("Gameplay_TiltDirection")
-            local start = head.CFrame.Position
-            local direction = Vector3.new(hrp.CFrame.LookVector.X, hrp.CFrame.LookVector.Y, hrp.CFrame.LookVector.Z)
-            local destination = start + (direction + Vector3.new(tilt.X/6, 0, tilt.Z/6)) * 50
-            local mid = start:Lerp(destination, 0.47)
-            if linesfold:FindFirstChild(player.Name) then
-                part = linesfold:FindFirstChild(player.Name)
-                part.Color = player:GetAttribute("LineColor") and player:GetAttribute("LineColor") or Color3.new(1,1,1)
-                if teamcheck(player) then
-                    part.Transparency = 0
-                    part.CFrame = CFrame.new(mid, destination)
-                else
-                    part.Transparency = 1
-                end
-            else
-                part = Instance.new("Part", linesfold)
-                part.Name = player.Name
-                part.Size = Vector3.new(0.15, 0.15, 50)
-                part.Anchored = true
-                part.Color = player:GetAttribute("LineColor") and player:GetAttribute("LineColor") or Color3.new(1,1,1)
-                part.CanCollide = false
-                part.Material = Enum.Material.Air
-                part.Transparency = 0.6
-                if teamcheck(player) then
-                    part.Transparency = 0
-                    part.CFrame = CFrame.new(mid, destination)
-                else
-                    part.Transparency = 1
-                end
-            end
-        end
-    end
     if getlvl() < 5 then waitinglvl5 = true else enableadvmoves() end
     -- Main code
-    local recieves = {["Dive"] = true, ["Bump"] = true, ["Set"] = true, ["JumpSet"] = true}
-    local attack = {["Spike"] = true}
+    local recieves = {["Dive"] = true, ["Bump"] = true, ["Set"] = true, ["JumpSet"] = false}
+    local attack = {["Spike"] = true,  ["JumpSet"] = true, ["Block"] = true}
     -- Events
     pls.PlayerAdded:Connect(function(ply)
         ply:SetAttribute("LineColor", Color3.fromRGB(255,255,255))
@@ -244,24 +205,23 @@ if volleyball_ids[tostring(game.PlaceId)] then
                 if part.Parent == lp.Character then
                     if RP:GetAttribute("LastHitTeam") ~= tostring(lp.Team) and attack[RP:GetAttribute("LastHitType")] then
                         if child.PrimaryPart.CFrame.Position.Y >= lp.Character.PrimaryPart.CFrame.Position.Y then
-                            -- if is_midair() then update_hitbox(1.5+((math.floor(getping())/50))) end
-                            if setter_mode and not is_midair() or not setter_mode then
+                            if not setter_mode and is_midair() or not is_midair() then
                                 vinp.CenterMouseClick()
                             end
                         else
-                            if setter_mode and not is_midair() or not setter_mode then
+                            if is_midair() then
+                                autoset = true
                                 vinp.PressKey(Enum.KeyCode.Q)
                             end
                         end
-                    elseif not setter_mode and is_midair() and RP:GetAttribute("LastHitTeam") == tostring(lp.Team) and (attack[RP:GetAttribute("LastHitType")] or recieves[RP:GetAttribute("LastHitType")]) then
+                    elseif not setter_mode and is_midair() and RP:GetAttribute("LastHitter") ~= lp.Name and RP:GetAttribute("LastHitTeam") == tostring(lp.Team) and (attack[RP:GetAttribute("LastHitType")] or recieves[RP:GetAttribute("LastHitType")] or RP:GetAttribute("LastHitType") == "Block") then
                         vinp.CenterMouseClick()
-                        -- if child.PrimaryPart.CFrame.Position.Y >= lp.Character.PrimaryPart.CFrame.Position.Y then
-                        -- end
                     end
                 end
             end)
         end
     end)
+    -- Binds
     UIS.InputBegan:Connect(function(a,b)
         if a.KeyCode == Enum.KeyCode.Space and not b then
             pcall(function()
@@ -269,26 +229,45 @@ if volleyball_ids[tostring(game.PlaceId)] then
                     local c1 = lp.Character.PrimaryPart.CFrame
                     local last_height = c1.Position.Y
                     rotate_to_cam()
+                    antishiftlock = false
                     repeat task.wait() until c1.Position.Y < last_height
                 end
             end)
         elseif a.KeyCode == Enum.KeyCode.LeftControl and not b then
             superhitbox = false
+            antishiftlock = false
         end
-        if a.KeyCode == Enum.KeyCode.F1 then
-            claim_rewards:InvokeServer()
-        elseif a.KeyCode == Enum.KeyCode.F2 then
-            setter_mode = not setter_mode
-            msg.Chat(string.format("Setter mode was toggled (%s)", setter_mode and "Enabled" or "Disabled"), "Blue")
+        if a.KeyCode == Enum.KeyCode.F1 and not b then
+            setter_mode = false
+            spike_hack = false
+            msg.Notify("Special modes", "Disabled", 0.3)
             if targethl then targethl:Destroy() end
-        elseif a.KeyCode == Enum.KeyCode.F3 then
-            request_teleport:InvokeServer("Twos")
-        elseif a.KeyCode == Enum.KeyCode.F4 then
-            return_to_lobby:InvokeServer(true)
-        elseif a.KeyCode == Enum.KeyCode.F5 then
-            return_to_lobby:InvokeServer(false)
+        elseif a.KeyCode == Enum.KeyCode.F2 and not b then
+            if not ingame() then request_teleport:InvokeServer("Twos") end
+        elseif a.KeyCode == Enum.KeyCode.F3 and not b then
+            if not ingame() then return_to_lobby:InvokeServer(true)
+            elseif pgui.Interface.Game.RetryServerVote.Visible == true then high_ping:InvokeServer(true)
+            else setter_mode = not setter_mode; if targethl then targethl:Destroy() end; msg.Notify("Setter mode", setter_mode and "Enabled" or "Disabled", 0.3) end
+        elseif a.KeyCode == Enum.KeyCode.F4 and not b then
+            if not ingame() then return_to_lobby:InvokeServer(false)
+            elseif pgui.Interface.Game.RetryServerVote.Visible == true then high_ping:InvokeServer(false)
+            else spike_hack = not spike_hack; msg.Notify("Adv. spike mode", spike_hack and "Enabled" or "Disabled", 0.3) end
+        end
+        if a.KeyCode == Enum.KeyCode.One and not b then
+            powerpreset = 0.3
+            msg.Notify("Power Preset", "0.3", 0.3)
+        elseif a.KeyCode == Enum.KeyCode.Two and not b then
+            powerpreset = 0.5
+            msg.Notify("Power Preset", "0.5", 0.3)
+        elseif a.KeyCode == Enum.KeyCode.Three and not b then
+            powerpreset = 0.8
+            msg.Notify("Power Preset", "0.8", 0.3)
+        elseif a.KeyCode == Enum.KeyCode.Four and not b then
+            powerpreset = nil
+            msg.Notify("Power Preset", "Disabled", 0.3)
         end
     end)
+    -- Chat Commands
     lp.Chatted:Connect(function(message, target)
         if target then return end
         if commands[message] then commands[message]()
@@ -335,29 +314,72 @@ if volleyball_ids[tostring(game.PlaceId)] then
                         ["ClientTimestamp"] = args[1]["ClientTimestamp"],
                         ["Move"] = move
                     })
+                elseif self == interact and (args[1]["Move"] == "Spike") then
+                    return hook_handler(self, {
+                        ["Charge"] = powerpreset or args[1]["Charge"],
+                        ["Move"] = args[1]["Move"],
+                        ["SpecialCharge"] = args[1]["SpecialCharge"],
+                        ["TiltDirection"] = args[1]["TiltDirection"],
+                        ["BallId"] = args[1]["BallId"],
+                        ["MoveDirection"] = args[1]["MoveDirection"],
+                        ["ClientCanRunSpecial"] = true,
+                        ["From"] = args[1]["From"],
+                        ["LookVector"] = (spike_hack) and CurCam.CFrame.LookVector or args[1]["LookVector"]
+                    })
                 elseif self == interact and (args[1]["Move"] == "JumpSet") then
-                    superhitbox = false
                     local tilt = args[1]["TiltDirection"]
+                    local set_assist = true
+                    if tilt ~= Vector3.yAxis then set_assist = false end
+                    local final
+                    local max_dist = 64
                     if closest[1] and setter_mode then
                         local target = closest[1]
-                        local actpos = Vector3.new(target.Position.x, target.Position.y+1.5, target.Position.z)
-                        local cf = CFrame.new(actpos + target.CFrame.LookVector*1.1, actpos)
-                        tilt = (cf.Position-ball.PrimaryPart.Position).Unit or tilt
+                        local part = target
+                        local vel,rot = part.Velocity,part.CFrame.Rotation
+                        if vel ~= Vector3.zero then
+                            local speed,dir = vel.Magnitude,vel.Unit
+                            local dist = 2 +(speed*0.7)
+                            local offset = dir*dist
+                            final = part.CFrame.Position+offset
+                            local min = math.floor(part.Position.Z) < 0 and -4 or 4
+                            local fz = math.clamp(final.Z, min<4 and -math.huge or min, min<4 and min or math.huge)
+                            final = Vector3.new(final.X, part.Position.Y, fz < 0 and math.min(fz, min) or math.max(fz, min))
+                            final = CFrame.new(final + target.CFrame.LookVector, final)
+                            final = final.Position
+                            tilt = tilt == Vector3.yAxis and (final-ball.PrimaryPart.Position).Unit or tilt
+                        else
+                            local actpos = Vector3.new(target.Position.x, target.Position.y, target.Position.z)
+                            final = CFrame.new(actpos + target.CFrame.LookVector, actpos)
+                            final = final.Position
+                            tilt = tilt == Vector3.yAxis and (final-ball.PrimaryPart.Position).Unit or tilt
+                        end
                         closest = {nil, 1e99}
+                    elseif not setter_mode and autoset then
+                        tilt = Vector3.yAxis
+                        autoset = false
                     end
+                    local dist = final and add.dist_to(final) or max_dist
                     return hook_handler(self, {
-                        ["Charge"] = args[1]["Charge"],
+                        ["Charge"] = set_assist and (dist < max_dist and dist/max_dist or 1) or args[1]["Charge"],
                         ["Move"] = args[1]["Move"],
                         ["SpecialCharge"] = args[1]["SpecialCharge"],
                         ["TiltDirection"] = tilt,
                         ["BallId"] = args[1]["BallId"],
                         ["MoveDirection"] = args[1]["MoveDirection"],
-                        ["ClientCanRunSpecial"] = false,
+                        ["ClientCanRunSpecial"] = true,
                         ["From"] = args[1]["From"],
                         ["LookVector"] = args[1]["LookVector"]
                     })
                 elseif self == ping then 
                     return hook_handler(self, args[1], {})
+                elseif self == serve then 
+                    return hook_handler(self, args[1]*1.4, powerpreset or 1)
+                elseif self == spawnball then
+                    if args[1] then
+                        return hook_handler(self, args[1]*1.4)
+                    else
+                        return hook_handler(self, ...)
+                    end
                 end
                 return hook_handler(self, ...)
             end)
@@ -367,7 +389,7 @@ if volleyball_ids[tostring(game.PlaceId)] then
     task.spawn(function()
         while game:GetService("RunService").RenderStepped:Wait() do
             if lp.Character:FindFirstChild("Humanoid") then
-                update_hitbox((superhitbox and 5 or is_midair() and 2 or 1.7)+(math.floor((add.getping()-50)/50)))
+                update_hitbox((superhitbox and 5 or is_midair() and 2 or 1.7)+(math.floor((getping()-50)/50)))
             end
             if hookmetamethod and antishiftlock then UserSettings():GetService("UserGameSettings").RotationType = Enum.RotationType.MovementRelative end
             if closest[1] and setter_mode then
@@ -382,7 +404,6 @@ if volleyball_ids[tostring(game.PlaceId)] then
     task.spawn(function()
         while game:GetService("RunService").RenderStepped:Wait() do
             for i,v in pairs(pls:GetChildren()) do
-                update_line(v)
                 if not setter_mode or teamcheck(v) or v == lp or not v.Character  then continue end
                 local pp = v.Character.PrimaryPart
                 local camera_lv = CurCam.CFrame.LookVector
@@ -402,6 +423,7 @@ if volleyball_ids[tostring(game.PlaceId)] then
                 if getlvl()>=5 then
                     local str = pgui:FindFirstChild("Interface").TeamSelection.Options.AdvancedMoves.Text.Text
                     if str:find("OFF") then services.GameService.RF.ToggleAdvancedMoves:InvokeServer() end
+                    request_teleport:InvokeServer("Default")
                     waitinglvl5=false
                 end
             end
@@ -412,6 +434,6 @@ if volleyball_ids[tostring(game.PlaceId)] then
         end
     end)
 end
-print("Finished!")
+msg.Notify("Useless", "Loaded", 0.1)
 if _G.ReExec then return end
 _G.ReExec = true; queue_on_teleport("loadstring(readfile('misc.lua'))(); _G.ReExec = false")
