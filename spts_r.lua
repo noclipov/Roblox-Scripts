@@ -147,7 +147,7 @@ function Interaction.new(targetPlayer)
 
     -- 2. Создание панели действий над головой
     local head = targetChar:FindFirstChild("Head")
-    if head then
+    if head and #INTERACTIONS>0 then
         self:CreateActionDock(head, targetPlayer)
     end
 
