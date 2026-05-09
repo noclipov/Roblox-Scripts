@@ -58,7 +58,7 @@ local INTERACTIONS = {
 
 -- [[ ПЕРЕМЕННЫЕ СОСТОЯНИЯ ]]
 local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local states = {phychiczone = false}
+local states = {phychiczone = false, farmingpos = nil}
 local activeScanner = nil
 
 -- [[ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ]]
@@ -82,12 +82,20 @@ local function teleport(position, spread)
 end
 
 local function equipitem(name)
+	if not name then return end
 	local equipped = Events:WaitForChild("InventoryRF"):InvokeServer().Equipped
 	for i=1,#equipped do
 		Events:WaitForChild("UnequipItem"):FireServer(equipped[i])
 		task.wait(0.1)
 		Events:WaitForChild("EquipItem"):FireServer(name)
 	end
+end
+
+local function useskill(name, arg)
+	if not name then return end
+	local args = {[1]=name} 
+	if arg then args[2] = arg end
+	Events:WaitForChild("UseSkill"):FireServer(unpack(args))
 end
 
 -- [[ ПОДСВЕТКА ЦЕЛИ ]]
@@ -441,16 +449,24 @@ local function setupCharacter(char)
         msg.Mini("Error", "You have died", 2)
     end)
     char:WaitForChild("Humanoid").Changed:Connect(function(property)
-        if property == "MoveDirection" and char.Humanoid[property].Magnitude > 0 then
-            if char:FindFirstChild("PsychicPower") then
-                add.EquipTool()
-            end
-        elseif property == "MoveDirection" and char.Humanoid[property].Magnitude == 0 then
-            if states.phychiczone then
-                add.EquipTool("PsychicPower")
-            end
+        if property == "MoveDirection" then
+			if char.Humanoid[property].Magnitude > 0 then
+				if char:FindFirstChild("PsychicPower") then
+					add.EquipTool()
+				end
+			elseif char.Humanoid[property].Magnitude == 0 then
+				if states.phychiczone then
+					add.EquipTool("PsychicPower")
+				end
+			end
+			if states.farmingpos and add.distTo(states.farmingpos) > 15 then teleport(states.farmingpos, 0) end
         end
     end)
+	char:WaitForChild("HumanoidRootPart").Changed:Connect(function(property)
+		if property == "Position" or property == "CFrame" then
+			if states.farmingpos and add.distTo(states.farmingpos) > 15 then teleport(states.farmingpos, 0) end
+		end
+	end)
     char.ChildAdded:Connect(function(child)
         if child.Name == "KillingIntentAura" then
             child.Size = Vector3.new(50, 30, 50)
@@ -460,47 +476,17 @@ local function setupCharacter(char)
             child:WaitForChild("KillingIntentAuraSFX"):Destroy()
             child:WaitForChild("KillingIntentAura"):Destroy()
             child:WaitForChild("KillingIntentAura"):Destroy()
-			local function highlighter(ply, attribute)
-				attribute = attribute or "Reputation"
-				local function getcolor(attribute)
-					local target_stat = ply:GetAttribute(attribute)
-					return target_stat > 0 and Color3.fromRGB(0,190,140) or target_stat < 0 and Color3.fromRGB(190,30,30)
-				end
-				if ply.Character then add.hlplayer(ply, getcolor(attribute), nil, nil, 0.8) end
-				ply.CharacterAdded:Connect(function(char)
-					add.hlplayer(ply, getcolor(attribute), nil, nil, 0.8)
-				end)
-				ply.AttributeChanged:Connect(function(atr)
-					if atr == attribute and ply.Character then
-						add.hlplayer(ply, getcolor(attribute), nil, nil, 0.8)
-					end
-				end)
-			end
-			for _,ply in pairs(Players:GetPlayers()) do
-				if ply == LocalPlayer then continue end
-				highlighter(ply, "Reputation")
-			end
-			local new_handler; new_handler = Players.PlayerAdded:Connect(function(ply)
-				highlighter(ply, "Reputation")
-			end)
-			child.Destroying:Connect(function()
-				new_handler:Disconnect()
-				for _,ply in pairs(Players:GetPlayers()) do
-					add.unhlplayer(ply)
-				end
-			end)
 		end
     end)
     Events:WaitForChild("UseSkill"):FireServer("ConcealAura")
 	if LocalPlayer.Backpack:FindFirstChild("GhostBike") then LocalPlayer.Backpack.GhostBike:Destroy() end
 end
-
 setupCharacter(character)
 
 LocalPlayer.CharacterAdded:Connect(function(char)
     character = char
     setupCharacter(character)
-    task.wait(2)
+    task.wait(1.5)
     workspace.CurrentCamera.CameraSubject = character.Humanoid
     workspace.CurrentCamera.CameraType = Enum.CameraType.Follow
     LocalPlayer.PlayerGui.MainGui.Enabled = true
@@ -529,27 +515,42 @@ task.spawn(function()
     end
 end)
 
--- Авто-ротация зон в зависимости от онлайна
--- local function changeActivity()
---     if character and Players.NumPlayers > 1 then
---         teleport(Vector3.new(-2308.47, 230.12, -343.71), 0)
---         add.EquipTool("PsychicPower")
---     elseif character and Players.NumPlayers == 1 then
---         add.EquipTool()
---         teleport(Vector3.new(193.0, 248.42, 845.0), 0)
---     end
--- end
+-- Авто-ротация зон
+local zones = {
+	Npcs={
+		pos=Vector3.new(193.0, 248.42, 845.0),
+		item=nil,
+		tool=nil,
+		skill="KillingIntentAura"
+	},
+	PsychicPower={
+		pos=Vector3.new(-2308.47, 230.12, -343.71),
+		item="ZeusStrike",
+		tool="PsychicPower",
+		skill="KillingIntentAura"
+	},
+	BodyToughness={
+		pos=Vector3.new(-1206.77, 356.79, -3027.25),
+		item="ChampionsTrophy",
+		tool=nil,
+		skill=nil
+	},
+}
+
 local function changeActivity()
-    if LocalPlayer:GetAttribute("BodyToughness") < LocalPlayer:GetAttribute("PsychicPower")/37 then
-        if add.distTo(Vector3.new(-1206.77, 356.79, -3027.25)) < 10 then return end
-		equipitem("ChampionsTrophy")
-		add.EquipTool()
-		teleport(Vector3.new(-1206.77, 356.79, -3027.25), 0)
-	elseif LocalPlayer:GetAttribute("BodyToughness") >= LocalPlayer:GetAttribute("PsychicPower")/40 then
-		if add.distTo(Vector3.new(-2308.47, 230.12, -343.71)) < 10 then return end
-		equipitem("ZeusStrike")
-        add.EquipTool("PsychicPower")
-		teleport(Vector3.new(-2308.47, 230.12, -343.71), 0)
+	while true do
+		if not character then break end
+		for type,data in pairs(zones) do
+			print(type, data.pos)
+			if add.distTo(data.pos) > 15 then teleport(data.pos, 0) end
+			states.farmingpos = data.pos
+			add.equipTool(data.tool)
+			equipitem(data.item)
+			task.wait(0.1)
+			useskill(data.skill)
+			task.wait(1200)
+		end
+		task.wait()
 	end
 end
 
@@ -574,6 +575,4 @@ end
 Events:WaitForChild("ChangeRank"):FireServer(9)
 ReplicatedStorage:WaitForChild("EquipSavedRaceRF"):InvokeServer()
 msg.New("Success", "Auth", "Вы успешно вошли в систему", 5)
-
-LocalPlayer.AttributeChanged:Connect(changeActivity)
 changeActivity()
