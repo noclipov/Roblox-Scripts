@@ -27,24 +27,31 @@ local STYLE = {
     Bg = Color3.fromRGB(15, 15, 20),
     Text = Color3.fromRGB(255, 255, 255),
     Success = Color3.fromRGB(100, 255, 100),
-    Distance = 60,                -- Радиус работы сканера
-    MaxUiVisibleDistance = 80,     -- Дистанция исчезновения UI
+    Distance = 60,
+    MaxUiVisibleDistance = 80,
 }
 
 local STATS_CONFIG = {
-    ["Head"] = {Attr = "PsychicPower", Name = "Интеллект", Emoji = "🧠", Color = Color3.fromRGB(200, 100, 255), Offset = Vector3.new(3, 2, 0)},
-    ["UpperTorso"] = {Attr = "BodyToughness", Name = "Броня", Emoji = "🛡️", Color = Color3.fromRGB(80, 255, 150), Offset = Vector3.new(-3.5, 0.5, 0)},
-    ["RightUpperArm"] = {Attr = "FistStrength", Name = "Сила", Emoji = "🦾", Color = Color3.fromRGB(255, 80, 80), Offset = Vector3.new(3.5, 0, 0)},
-    ["LeftUpperLeg"] = {Attr = "MovementSpeed", Name = "Скорость", Emoji = "⚡", Color = Color3.fromRGB(80, 200, 255), Offset = Vector3.new(-3, -2, 0)},
-    ["RightUpperLeg"] = {Attr = "JumpForce", Name = "Прыжок", Emoji = "🚀", Color = Color3.fromRGB(255, 200, 80), Offset = Vector3.new(3, -2, 0)},
+    ["Head"] = {Attr = "PsychicPower", Name = "Psychic Power", Emoji = "🧠", Color = Color3.fromRGB(200, 100, 255), Offset = Vector3.new(3, 2, 0)},
+    ["UpperTorso"] = {Attr = "BodyToughness", Name = "Body Toughness", Emoji = "🛡️", Color = Color3.fromRGB(80, 255, 150), Offset = Vector3.new(-3.5, 0.5, 0)},
+    ["RightUpperArm"] = {Attr = "FistStrength", Name = "Fist Strength", Emoji = "🦾", Color = Color3.fromRGB(255, 80, 80), Offset = Vector3.new(3.5, 0, 0)},
+    ["LeftUpperLeg"] = {Attr = "MovementSpeed", Name = "Movement Speed", Emoji = "⚡", Color = Color3.fromRGB(80, 200, 255), Offset = Vector3.new(-3, -2, 0)},
+    ["RightUpperLeg"] = {Attr = "JumpForce", Name = "Jump Force", Emoji = "🚀", Color = Color3.fromRGB(255, 200, 80), Offset = Vector3.new(3, -2, 0)},
 }
 
 local INTERACTIONS = {
     {
-        Name = "Ник", 
+        Name = "Nick", 
         Emoji = "👤", 
         Callback = function(targetPlayer)
             setclipboard(targetPlayer.Name)
+        end
+    },
+    {
+        Name = "Invite", 
+        Emoji = "👥", 
+        Callback = function(targetPlayer)
+            Events.GangRemotes.Invite:FireServer(targetPlayer.UserId)
         end
     },
 }
@@ -74,9 +81,19 @@ local function teleport(position, spread)
     end
 end
 
+local function equipitem(name)
+	local equipped = Events:WaitForChild("InventoryRF"):InvokeServer().Equipped
+	for i=1,#equipped do
+		Events:WaitForChild("UnequipItem"):FireServer(equipped[i])
+		task.wait(0.1)
+		Events:WaitForChild("EquipItem"):FireServer(name)
+	end
+end
+
 -- [[ ПОДСВЕТКА ЦЕЛИ ]]
 local Highlight = Instance.new("Highlight")
 	Highlight.FillTransparency = 0.85
+	Highlight.FillColor = Color3.fromRGB(148, 63, 209)
 	Highlight.OutlineColor = STYLE.Highlight
 	Highlight.Parent = CoreGui
 
@@ -109,7 +126,7 @@ function Interaction.new(targetPlayer)
     local oldGui = PlayerGui:FindFirstChild("NumericScanner")
     if oldGui then oldGui:Destroy() end
 
-    local self = setmetatable({}, Interaction)
+	local self = setmetatable({}, Interaction)
     self.Target = targetPlayer
     self.Gui = Instance.new("ScreenGui", PlayerGui)
     self.Gui.Name = "NumericScanner"
@@ -414,6 +431,8 @@ end)
 
 -- [[ АВТОМАТИЗАЦИЯ ИГРЫ (ОСНОВНОЙ ФУНКЦИОНАЛ) ]]
 local function setupCharacter(char)
+	LocalPlayer:SetAttribute("BodyAura", 12)
+	LocalPlayer:SetAttribute("FistAura", 1)
     if not char then return end
     char:WaitForChild("Humanoid").Died:Connect(function()
         task.wait(2)
@@ -473,6 +492,7 @@ local function setupCharacter(char)
 		end
     end)
     Events:WaitForChild("UseSkill"):FireServer("ConcealAura")
+	if LocalPlayer.Backpack:FindFirstChild("GhostBike") then LocalPlayer.Backpack.GhostBike:Destroy() end
 end
 
 setupCharacter(character)
@@ -519,8 +539,20 @@ end)
 --         teleport(Vector3.new(193.0, 248.42, 845.0), 0)
 --     end
 -- end
+local function changeActivity()
+    if LocalPlayer:GetAttribute("BodyToughness") < LocalPlayer:GetAttribute("PsychicPower")/37 then
+        if add.distTo(Vector3.new(-1206.77, 356.79, -3027.25)) < 10 then return end
+		equipitem("ChampionsTrophy")
+		add.EquipTool()
+		teleport(Vector3.new(-1206.77, 356.79, -3027.25), 0)
+	elseif LocalPlayer:GetAttribute("BodyToughness") >= LocalPlayer:GetAttribute("PsychicPower")/40 then
+		if add.distTo(Vector3.new(-2308.47, 230.12, -343.71)) < 10 then return end
+		equipitem("ZeusStrike")
+        add.EquipTool("PsychicPower")
+		teleport(Vector3.new(-2308.47, 230.12, -343.71), 0)
+	end
+end
 
--- changeActivity()
 -- Players.PlayerAdded:Connect(changeActivity)
 -- Players.PlayerRemoving:Connect(changeActivity)
 
@@ -542,3 +574,6 @@ end
 Events:WaitForChild("ChangeRank"):FireServer(9)
 ReplicatedStorage:WaitForChild("EquipSavedRaceRF"):InvokeServer()
 msg.New("Success", "Auth", "Вы успешно вошли в систему", 5)
+
+LocalPlayer.AttributeChanged:Connect(changeActivity)
+changeActivity()
