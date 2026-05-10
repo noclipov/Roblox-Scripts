@@ -56,6 +56,17 @@ local INTERACTIONS = {
     },
 }
 
+local BODY_PARTS = {
+	Head = true,
+	UpperTorso = true,
+	LeftUpperArm = true, RightUpperArm = true,
+	LeftLowerArm = true, RightLowerArm = true,
+	LeftHand = true, RightHand = true,
+	LowerTorso = true,
+	LeftUpperLeg = true, RightUpperLeg = true,
+	LeftLowerLeg = true, RightLowerLeg = true,
+	LeftFoot = true, RightFoot = true
+}
 -- [[ ПЕРЕМЕННЫЕ СОСТОЯНИЯ ]]
 local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local states = {phychiczone = false, farmingpos = nil}
@@ -71,11 +82,18 @@ local function copyToClipboard(text)
     end
 end
 
+local function useskill(name, arg)
+	if not name then return end
+	local args = {[1]=name} 
+	if arg then args[2] = arg end
+	Events:WaitForChild("UseSkill"):FireServer(unpack(args))
+end
+
 local function teleport(position, spread)
     position = position or character.PrimaryPart.Position
     spread = (spread and spread > -1) and spread or 5
     if spread > 0 then
-        Events:WaitForChild("UseSkill"):FireServer("Teleport", Vector3.new(position.X + math.random(-spread, spread), position.Y, position.Z + math.random(-spread, spread)))
+        useskill("Teleport", Vector3.new(position.X + math.random(-spread, spread), position.Y, position.Z + math.random(-spread, spread)))
     else
         if character then character.PrimaryPart.CFrame = CFrame.new(position) end
     end
@@ -91,12 +109,18 @@ local function equipitem(name)
 	end
 end
 
-local function useskill(name, arg)
-	if not name then return end
-	local args = {[1]=name} 
-	if arg then args[2] = arg end
-	Events:WaitForChild("UseSkill"):FireServer(unpack(args))
+local function update_bodyparts(character)
+	for part in BODY_PARTS do
+		BODY_PARTS[part] = character and character:FindFirstChild(part) or true
+	end
 end
+
+-- local function setup_bodyparts(character, callback)
+-- 	if not character or BODY_PARTS.Head == true then return end
+-- 	for part in BODY_PARTS do
+-- 		part.ChildAdded:Connect(callback)
+-- 	end
+-- end
 
 -- [[ ПОДСВЕТКА ЦЕЛИ ]]
 local Highlight = Instance.new("Highlight")
@@ -440,13 +464,14 @@ end)
 -- [[ АВТОМАТИЗАЦИЯ ИГРЫ (ОСНОВНОЙ ФУНКЦИОНАЛ) ]]
 local function setupCharacter(char)
 	LocalPlayer:SetAttribute("BodyAura", 12)
-	LocalPlayer:SetAttribute("FistAura", 1)
+	LocalPlayer:SetAttribute("FistAura", 12)
     if not char then return end
     char:WaitForChild("Humanoid").Died:Connect(function()
+		update_bodyparts()
         task.wait(2)
         local btn = LocalPlayer.PlayerGui.IntroGui.PlayButton
         firesignal(btn.MouseButton1Click)
-        msg.Mini("Error", "You have died", 2)
+        msg.Mini("Coral", "You have died", 2)
     end)
     char:WaitForChild("Humanoid").Changed:Connect(function(property)
         if property == "MoveDirection" then
@@ -478,6 +503,7 @@ local function setupCharacter(char)
             child:WaitForChild("KillingIntentAura"):Destroy()
 		end
     end)
+	update_bodyparts(char)
     Events:WaitForChild("UseSkill"):FireServer("ConcealAura")
 	if LocalPlayer.Backpack:FindFirstChild("GhostBike") then LocalPlayer.Backpack.GhostBike:Destroy() end
 end
@@ -517,40 +543,43 @@ end)
 
 -- Авто-ротация зон
 local zones = {
-	Npcs={
-		pos=Vector3.new(193.0, 248.42, 845.0),
+	{
+		stat="TPM",
+		pos=Vector3.new(193, 248.42, 845),
 		item=nil,
 		tool=nil,
 		skill="KillingIntentAura"
 	},
-	PsychicPower={
-		pos=Vector3.new(-2308.47, 230.12, -343.71),
+	{
+		stat="PsychicPower",
+		pos=Vector3.new(-2308, 230.12, -343),
 		item="ZeusStrike",
 		tool="PsychicPower",
 		skill="KillingIntentAura"
 	},
-	BodyToughness={
-		pos=Vector3.new(-1206.77, 356.79, -3027.25),
+	{
+		stat="BodyToughness",
+		pos=Vector3.new(-1206, 356.79, -3027),
 		item="ChampionsTrophy",
 		tool=nil,
 		skill=nil
 	},
 }
-
 local function changeActivity()
-	while true do
+	while true do task.wait()
 		if not character then break end
-		for type,data in pairs(zones) do
-			print(type, data.pos)
-			if add.distTo(data.pos) > 15 then teleport(data.pos, 0) end
+		for _,data in zones do
 			states.farmingpos = data.pos
+			task.wait(0.2)
+			if add.distTo(data.pos) > 15 then teleport(data.pos, 0) end
 			add.equipTool(data.tool)
 			equipitem(data.item)
-			task.wait(0.1)
+			repeat task.wait() until not character:FindFirstChild("ForceField")
+			task.wait(0.5)
 			useskill(data.skill)
+			msg.Mini("Sky", "Changing activity", 1200)
 			task.wait(1200)
 		end
-		task.wait()
 	end
 end
 
@@ -572,7 +601,14 @@ for _, box in pairs(workspace.Main.TrainingAreasHitBoxes.PS:GetChildren()) do
     end)
 end
 
+add.chatFilter(function(msg, src)
+    local text = msg.Text
+	local self = src.UserId == LocalPlayer.UserId
+    if self and (text:find("Tokens") or text:find("TPM") or text:find("VIP")) then return false end
+    return true
+end)
+
 Events:WaitForChild("ChangeRank"):FireServer(9)
 ReplicatedStorage:WaitForChild("EquipSavedRaceRF"):InvokeServer()
-msg.New("Success", "Auth", "Вы успешно вошли в систему", 5)
+msg.New("Mint", "Auth", "Вы успешно вошли в систему", 5)
 changeActivity()
