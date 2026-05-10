@@ -56,20 +56,9 @@ local INTERACTIONS = {
     },
 }
 
-local BODY_PARTS = {
-	Head = true,
-	UpperTorso = true,
-	LeftUpperArm = true, RightUpperArm = true,
-	LeftLowerArm = true, RightLowerArm = true,
-	LeftHand = true, RightHand = true,
-	LowerTorso = true,
-	LeftUpperLeg = true, RightUpperLeg = true,
-	LeftLowerLeg = true, RightLowerLeg = true,
-	LeftFoot = true, RightFoot = true
-}
 -- [[ ПЕРЕМЕННЫЕ СОСТОЯНИЯ ]]
 local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local states = {phychiczone = false, farmingpos = nil}
+local states = {phychiczone = false, autofarm = false, farmingpos = nil}
 local activeScanner = nil
 
 -- [[ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ]]
@@ -106,12 +95,6 @@ local function equipitem(name)
 		Events:WaitForChild("UnequipItem"):FireServer(equipped[i])
 		task.wait(0.1)
 		Events:WaitForChild("EquipItem"):FireServer(name)
-	end
-end
-
-local function update_bodyparts(character)
-	for part in BODY_PARTS do
-		BODY_PARTS[part] = character and character:FindFirstChild(part) or true
 	end
 end
 
@@ -464,10 +447,9 @@ end)
 -- [[ АВТОМАТИЗАЦИЯ ИГРЫ (ОСНОВНОЙ ФУНКЦИОНАЛ) ]]
 local function setupCharacter(char)
 	LocalPlayer:SetAttribute("BodyAura", 12)
-	LocalPlayer:SetAttribute("FistAura", 12)
+	LocalPlayer:SetAttribute("FistAura", 1)
     if not char then return end
     char:WaitForChild("Humanoid").Died:Connect(function()
-		update_bodyparts()
         task.wait(2)
         local btn = LocalPlayer.PlayerGui.IntroGui.PlayButton
         firesignal(btn.MouseButton1Click)
@@ -503,7 +485,6 @@ local function setupCharacter(char)
             child:WaitForChild("KillingIntentAura"):Destroy()
 		end
     end)
-	update_bodyparts(char)
     Events:WaitForChild("UseSkill"):FireServer("ConcealAura")
 	if LocalPlayer.Backpack:FindFirstChild("GhostBike") then LocalPlayer.Backpack.GhostBike:Destroy() end
 end
@@ -552,7 +533,7 @@ local zones = {
 	},
 	{
 		stat="PsychicPower",
-		pos=Vector3.new(-2308, 230.12, -343),
+		pos=Vector3.new(-2312, 244.56, -363),
 		item="ZeusStrike",
 		tool="PsychicPower",
 		skill="KillingIntentAura"
@@ -564,21 +545,28 @@ local zones = {
 		tool=nil,
 		skill=nil
 	},
+	{
+		stat="FistStrength",
+		pos=Vector3.new(272, 1158.24, -3025),
+		item="OrangePlasma",
+		tool=nil,
+		skill=nil
+	},
 }
 local function changeActivity()
-	while true do task.wait()
+	states.autofarm = true
+	while states.autofarm do task.wait()
 		if not character then break end
 		for _,data in zones do
-			states.farmingpos = data.pos
-			task.wait(0.2)
-			if add.distTo(data.pos) > 15 then teleport(data.pos, 0) end
+			local startstat = LocalPlayer:GetAttribute(data.stat)
+			states.farmingpos = data.pos; task.wait(0.2)
+			if add.distTo(data.pos) > 15 then teleport(data.pos, 5) end
 			add.equipTool(data.tool)
 			equipitem(data.item)
 			repeat task.wait() until not character:FindFirstChild("ForceField")
-			task.wait(0.5)
-			useskill(data.skill)
-			msg.Mini("Sky", "Changing activity", 1200)
-			task.wait(1200)
+			task.wait(0.5); useskill(data.skill)
+			msg.Mini("Sky", "Activity Changed", 1200, function() states.autofarm = false; states.farmingpos = nil; msg.Mini("Pink", "Click on me to restart", 0, function() changeActivity() end) end); task.wait(1200)
+			print(("Farmed %s of %s"):format(conv.ToLetters(LocalPlayer:GetAttribute(data.stat)-startstat), data.stat))
 		end
 	end
 end
@@ -610,5 +598,6 @@ end)
 
 Events:WaitForChild("ChangeRank"):FireServer(9)
 ReplicatedStorage:WaitForChild("EquipSavedRaceRF"):InvokeServer()
-msg.New("Mint", "Auth", "Вы успешно вошли в систему", 5)
-changeActivity()
+msg.New("Mint", "Auth", "You have successfully logged in", 10, function()
+	changeActivity()
+end, "Авто-фарм")
