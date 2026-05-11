@@ -645,7 +645,7 @@ workspace.ChildAdded:Connect(function(child)
     if child.Name:find("Crate") then task.wait(0.5)
 		local rarity = child:GetAttribute("Rarity")
 		if not states.crates or not table.find(states.crates, rarity) then return end
-        msg.Mini("Honey", ("%s Crate has spawned"):format(rarity), 10, function()
+        msg.Mini("Peach", ("%s Crate has spawned"):format(rarity), 10, function()
 			collect_crates(child.Name)
 		end)
     end
