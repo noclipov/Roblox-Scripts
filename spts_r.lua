@@ -5,6 +5,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Lua
 local msg = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/Libs/notify.lua"))()
 local add = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/Libs/additional.lua"))()
 local wsm = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/Libs/wsm.lua"))()
+local plm = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/Libs/playerlist.lua"))()
 
 local ws = wsm.new("ws://localhost:1337/luau", 15)
 ws:Start()
@@ -67,6 +68,34 @@ local INTERACTIONS = {
         end,
         Callback = function(targetPlayer)
             Events.GangRemotes.Invite:FireServer(targetPlayer.UserId)
+        end
+    },
+}
+
+local PLAYERLIST_INTERACTIONS = {
+    {
+        Emoji = "👥",
+        Condition = function(targetPlayer)
+            -- Пример проверки: показывать кнопку инвайта только если мы в банде
+            local myGang = game.Players.LocalPlayer:GetAttribute("Gang")
+            return (myGang ~= nil and myGang ~= "")
+        end,
+        Callback = function(targetPlayer)
+            Events.GangRemotes.Invite:FireServer(targetPlayer.UserId)
+            msg.Mini("Sky", "Приглашение отправлено игроку " .. targetPlayer.Name, 3)
+        end
+    },
+    {
+        Emoji = "💢",
+        Condition = function(targetPlayer)
+            return targetPlayer:GetAttribute("PsychicPower")*100<=game.Players.LocalPlayer:GetAttribute("PsychicPower")
+        end,
+        Callback = function(targetPlayer)
+            local char = targetPlayer.Character
+            if char and char:FindFirstChild("HumanoidRootPart") and not char:FindFirstChildOfClass("ForceField") then
+                Events.UseSkill:FireServer("HellFire", char)
+                msg.Mini("Wine", "Пытаемся сжечь " .. targetPlayer.Name, 3)
+            end
         end
     },
 }
@@ -154,7 +183,6 @@ RunService.RenderStepped:Connect(function()
     Highlight.Adornee = target
     Highlight.Enabled = (target ~= nil)
 end)
-
 
 -- [[ КЛАСС СИСТЕМЫ ИНТЕРФЕЙСА ДЛЯ СЕБЯ (ПОСТОЯННЫЙ) ]]
 local MyStatsTracker = {}
@@ -622,7 +650,7 @@ local function setupCharacter(char)
     end)
     char.ChildAdded:Connect(function(child)
         if child.Name == "KillingIntentAura" then
-            child.Size = Vector3.new(50, 30, 50)
+            child.Size = Vector3.new(45, 25, 45)
 			child.Material = Enum.Material.ForceField
 			child.Color = Color3.fromRGB(110, 50, 220)
 			child.Transparency = 0.75
@@ -649,6 +677,19 @@ workspace.ChildAdded:Connect(function(child)
 			collect_crates(child.Name)
 		end)
     end
+end)
+
+game:GetService("CoreGui").RobloxGui.NotificationFrame.ChildAdded:Connect(function(child)
+    game:GetService("CoreGui").RobloxGui.NotificationFrame.Visible = false
+	if not child then return end
+    local title = child:WaitForChild("NotificationTitle").Text
+    local text = child:WaitForChild("NotificationText").Text
+	if not child:FindFirstChildOfClass("TextButton") then
+		child:Destroy()
+		msg.New("Vanilla", title, text, 5)
+    else
+        game:GetService("CoreGui").RobloxGui.NotificationFrame = true
+	end
 end)
 
 LocalPlayer.CharacterAdded:Connect(function(char)
@@ -682,6 +723,7 @@ local zones = {
 	{
 		stat="FinalTPM",
 		pos=Vector3.new(193, 248.42, 845),
+		spread=3,
 		item=nil,
 		tool=nil,
 		skill="KillingIntentAura"
@@ -689,6 +731,7 @@ local zones = {
 	{
 		stat="PsychicPower",
 		pos=Vector3.new(-2312, 244.56, -363),
+		spread=10,
 		item="ZeusStrike",
 		tool="PsychicPower",
 		skill="KillingIntentAura"
@@ -696,6 +739,7 @@ local zones = {
 	{
 		stat="BodyToughness",
 		pos=Vector3.new(-1206, 356.79, -3027),
+		spread=10,
 		item="ChampionsTrophy",
 		tool=nil,
 		skill=nil
@@ -715,6 +759,15 @@ local function datatows(delay: number)
 	end)
 end
 
+local function setup_zone(data)
+	states.farmingpos = data.pos; task.wait(0.2)
+	if add.distTo(data.pos) > 15 then teleport(data.pos, data.spread) end
+	add.equipTool(data.tool)
+	equipitem(data.item)
+	repeat task.wait() until not character:FindFirstChild("ForceField")
+	task.wait(0.5); useskill(data.skill)
+end
+
 local function changeActivity()
 	local farm;
 	local upd = datatows(1)
@@ -724,13 +777,8 @@ local function changeActivity()
 			if not character then break end
 			for _,data in zones do
 				local startstat = LocalPlayer:GetAttribute(data.stat)
-				states.farmingpos = data.pos; task.wait(0.2)
-				if add.distTo(data.pos) > 15 then teleport(data.pos, 5) end
-				add.equipTool(data.tool)
-				equipitem(data.item)
-				repeat task.wait() until not character:FindFirstChild("ForceField")
-				task.wait(0.5); useskill(data.skill)
-				msg.Mini("Midnight", "Activity Changed", 1200, function() task.cancel(farm); task.cancel(upd); if data.skill then useskill(data.skill) end; states.farmingpos = nil; msg.Mini("Wine", "Farming stopped", 0, function() changeActivity() end) end); task.wait(1200)
+				setup_zone(data)
+				msg.Mini("Wine", "Activity Changed", 1200, function() task.cancel(farm); task.cancel(upd); if data.skill then useskill(data.skill) end; states.farmingpos = nil; msg.Mini("Wine", "Farming stopped", 0, function() changeActivity() end) end); task.wait(1200)
 				print(("Farmed %s of %s"):format(conv.ToLetters(LocalPlayer:GetAttribute(data.stat)-startstat), data.stat))
 			end
 		end
@@ -758,6 +806,8 @@ add.chatFilter(function(msg, src)
     if self and (text:find("Tokens") or text:find("TPM") or text:find("VIP")) then return false end
     return true
 end)
+
+plm.Init(PLAYERLIST_INTERACTIONS, "Left", Enum.KeyCode.Delete)
 
 Events:WaitForChild("ChangeRank"):FireServer(9)
 ReplicatedStorage:WaitForChild("EquipSavedRaceRF"):InvokeServer()
