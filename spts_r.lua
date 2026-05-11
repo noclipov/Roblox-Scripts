@@ -4,6 +4,10 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Lua
 
 local msg = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/Libs/NotifyModule.lua"))()
 local add = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/Libs/additional.lua"))()
+local wsm = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/Libs/WSM.lua"))()
+
+local ws = wsm.new("ws://localhost:1337/luau", 15)
+ws:Start()
 
 -- [[ СЕРВИСЫ ]]
 local Players = game:GetService("Players")
@@ -466,12 +470,12 @@ local function setupCharacter(char)
 					add.EquipTool("PsychicPower")
 				end
 			end
-			if states.farmingpos and add.distTo(states.farmingpos) > 15 then teleport(states.farmingpos, 0) end
+			if states.farmingpos and add.distTo(states.farmingpos) > 15 then teleport(states.farmingpos, 5) end
         end
     end)
 	char:WaitForChild("HumanoidRootPart").Changed:Connect(function(property)
 		if property == "Position" or property == "CFrame" then
-			if states.farmingpos and add.distTo(states.farmingpos) > 15 then teleport(states.farmingpos, 0) end
+			if states.farmingpos and add.distTo(states.farmingpos) > 15 then teleport(states.farmingpos, 5) end
 		end
 	end)
     char.ChildAdded:Connect(function(child)
@@ -525,7 +529,7 @@ end)
 -- Авто-ротация зон
 local zones = {
 	{
-		stat="TPM",
+		stat="FinalTPM",
 		pos=Vector3.new(193, 248.42, 845),
 		item=nil,
 		tool=nil,
@@ -545,30 +549,48 @@ local zones = {
 		tool=nil,
 		skill=nil
 	},
-	{
-		stat="FistStrength",
-		pos=Vector3.new(272, 1158.24, -3025),
-		item="OrangePlasma",
-		tool=nil,
-		skill=nil
-	},
+	-- {
+	-- 	stat="FistStrength",
+	-- 	pos=Vector3.new(272, 1158.24, -3025),
+	-- 	item="OrangePlasma",
+	-- 	tool=nil,
+	-- 	skill=nil
+	-- },
 }
+
+local function datatows(data: table, delay: number)
+	return task.spawn(function()
+		while true do
+			ws:Send(data)
+			task.wait(delay)
+		end
+	end)
+end
+
 local function changeActivity()
 	states.autofarm = true
-	while states.autofarm do task.wait()
-		if not character then break end
-		for _,data in zones do
-			local startstat = LocalPlayer:GetAttribute(data.stat)
-			states.farmingpos = data.pos; task.wait(0.2)
-			if add.distTo(data.pos) > 15 then teleport(data.pos, 5) end
-			add.equipTool(data.tool)
-			equipitem(data.item)
-			repeat task.wait() until not character:FindFirstChild("ForceField")
-			task.wait(0.5); useskill(data.skill)
-			msg.Mini("Sky", "Activity Changed", 1200, function() states.autofarm = false; states.farmingpos = nil; msg.Mini("Pink", "Click on me to restart", 0, function() changeActivity() end) end); task.wait(1200)
-			print(("Farmed %s of %s"):format(conv.ToLetters(LocalPlayer:GetAttribute(data.stat)-startstat), data.stat))
+	local farm;
+	local upd = datatows({
+		TPM = conv.ToLetters(LocalPlayer:GetAttribute("FinalTPM")),
+		PsychicPower = conv.ToLetters(LocalPlayer:GetAttribute("PsychicPower")),
+		BodyToughness = conv.ToLetters(LocalPlayer:GetAttribute("BodyToughness")),
+	}, 1)
+	farm = task.spawn(function()
+		while states.autofarm do task.wait()
+			if not character then break end
+			for _,data in zones do
+				local startstat = LocalPlayer:GetAttribute(data.stat)
+				states.farmingpos = data.pos; task.wait(0.2)
+				if add.distTo(data.pos) > 15 then teleport(data.pos, 5) end
+				add.equipTool(data.tool)
+				equipitem(data.item)
+				repeat task.wait() until not character:FindFirstChild("ForceField")
+				task.wait(0.5); useskill(data.skill)
+				msg.Mini("Sky", "Activity Changed", 1200, function() task.cancel(farm); task.cancel(upd); if data.skill then useskill(data.skill) end; states.autofarm = false; states.farmingpos = nil; msg.Mini("Pink", "Click on me to restart", 0, function() changeActivity() end) end); task.wait(1200)
+				print(("Farmed %s of %s"):format(conv.ToLetters(LocalPlayer:GetAttribute(data.stat)-startstat), data.stat))
+			end
 		end
-	end
+	end)
 end
 
 -- Players.PlayerAdded:Connect(changeActivity)
