@@ -730,7 +730,7 @@ local function changeActivity()
 				equipitem(data.item)
 				repeat task.wait() until not character:FindFirstChild("ForceField")
 				task.wait(0.5); useskill(data.skill)
-				msg.Mini("Sky", "Activity Changed", 1200, function() task.cancel(farm); task.cancel(upd); if data.skill then useskill(data.skill) end; states.farmingpos = nil; msg.Mini("Pink", "Click on me to restart", 0, function() changeActivity() end) end); task.wait(1200)
+				msg.Mini("Midnight", "Activity Changed", 1200, function() task.cancel(farm); task.cancel(upd); if data.skill then useskill(data.skill) end; states.farmingpos = nil; msg.Mini("Wine", "Farming stopped", 0, function() changeActivity() end) end); task.wait(1200)
 				print(("Farmed %s of %s"):format(conv.ToLetters(LocalPlayer:GetAttribute(data.stat)-startstat), data.stat))
 			end
 		end
