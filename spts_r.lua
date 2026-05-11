@@ -77,9 +77,6 @@ local states = {phychiczone = false, farmingpos = nil, crates = {"Secret"}}
 local activeScanner = nil
 
 -- [[ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ]]
-local respawn = LocalPlayer.PlayerGui.IntroGui.PlayButton.MouseButton1Click
-respawn = function() firesignal(respawn) end
-
 local function copyToClipboard(text)
     local setC = setclipboard or toclipboard or (Clipboard and Clipboard.set)
     if setC then
@@ -606,7 +603,7 @@ local function setupCharacter(char)
 	LocalPlayer:SetAttribute("FistAura", 1)
     char:WaitForChild("Humanoid").Died:Connect(function()
         task.wait(2)
-		respawn()
+		firesignal(LocalPlayer.PlayerGui.IntroGui.PlayButton.MouseButton1Click)
         msg.Mini("Coral", "You have died", 2)
     end)
     char:WaitForChild("Humanoid").Changed:Connect(function(property)
@@ -722,6 +719,7 @@ local function changeActivity()
 		BodyToughness = conv.ToLetters(LocalPlayer:GetAttribute("BodyToughness")),
 	}, 1)
 	farm = task.spawn(function()
+		states.farmingpos = zones[1].pos
 		while states.farmingpos ~= nil do task.wait()
 			if not character then break end
 			for _,data in zones do
