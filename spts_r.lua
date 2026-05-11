@@ -43,6 +43,7 @@ local STATS_CONFIG = {
     ["RightUpperLeg"] = {Attr = "JumpForce", Name = "Jump Force", Emoji = "🚀", Color = Color3.fromRGB(255, 200, 80), Offset = Vector3.new(3, -2, 0)},
 }
 
+-- [[ ТАБЛИЦА БЫСТРЫХ ВЗАИМОДЕЙСТВИЙ ]]
 local INTERACTIONS = {
     {
         Name = "Nick", 
@@ -50,10 +51,17 @@ local INTERACTIONS = {
         Callback = function(targetPlayer)
             setclipboard(targetPlayer.Name)
         end
+        -- Без поля Condition — кнопка показывается всегда
     },
     {
-        Name = "Invite", 
+        Name = "Squad", 
         Emoji = "👥", 
+        -- Условие появления: показывать только если игрок не в нашей группировке (Gang)
+        Condition = function(targetPlayer)
+            local myGang = LocalPlayer:GetAttribute("Gang")
+            local targetGang = targetPlayer:GetAttribute("Gang")
+            return (myGang ~= nil and myGang ~= "") and myGang ~= targetGang
+        end,
         Callback = function(targetPlayer)
             Events.GangRemotes.Invite:FireServer(targetPlayer.UserId)
         end
@@ -62,17 +70,20 @@ local INTERACTIONS = {
 
 -- [[ ПЕРЕМЕННЫЕ СОСТОЯНИЯ ]]
 local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local states = {phychiczone = false, autofarm = false, farmingpos = nil}
+local states = {phychiczone = false, farmingpos = nil, crates={"Secret"}}
 local activeScanner = nil
 
 -- [[ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ]]
+local respawn = LocalPlayer.PlayerGui.IntroGui.PlayButton.MouseButton1Click
+respawn = function() firesignal(respawn) end
+
 local function copyToClipboard(text)
-    local setC = setclipboard or toclipboard or (Clipboard and Clipboard.set)
-    if setC then
-        setC(tostring(text))
-    else
-        warn("Твой эксплоит не поддерживает копирование в буфер обмена!")
-    end
+	local setC = setclipboard or toclipboard or (Clipboard and Clipboard.set)
+	if setC then
+		setC(tostring(text))
+	else
+		warn("Твой эксплоит не поддерживает копирование в буфер обмена!")
+	end
 end
 
 local function useskill(name, arg)
@@ -102,12 +113,23 @@ local function equipitem(name)
 	end
 end
 
--- local function setup_bodyparts(character, callback)
--- 	if not character or BODY_PARTS.Head == true then return end
--- 	for part in BODY_PARTS do
--- 		part.ChildAdded:Connect(callback)
--- 	end
--- end
+local function collect_crate(crate, equip_psychic)
+    local lastpos = character.PrimaryPart.Position
+	local crate_primary = crate:WaitForChild("Meshes/CRATEFORSPTS_Cube")
+    local crate_position = crate_primary.Position or lastpos
+    add.equipTool(); teleport(crate_position, 2)
+    task.wait(0.25)
+    fireclickdetector(crate_primary:WaitForChild("ClickDetector"), 10)
+    task.wait(1); teleport(lastpos, 3)
+    if equip_psychic then equipTool("PsychicPower") end
+end
+
+local function collect_crates(name)
+	while workspace:FindFirstChild(name) do
+		collect_crate(workspace:FindFirstChild(name), character:FindFirstChild("PsychicPower") and true or false)
+		task.wait(2)
+	end
+end
 
 -- [[ ПОДСВЕТКА ЦЕЛИ ]]
 local Highlight = Instance.new("Highlight")
@@ -166,7 +188,7 @@ function Interaction.new(targetPlayer)
 
     -- 2. Создание панели действий над головой
     local head = targetChar:FindFirstChild("Head")
-    if head and #INTERACTIONS>0 then
+    if head then
         self:CreateActionDock(head, targetPlayer)
     end
 
@@ -303,6 +325,18 @@ function Interaction:CreateNumericCallout(part, data, targetPlayer)
 end
 
 function Interaction:CreateActionDock(head, targetPlayer)
+    -- Фильтруем список действий на основе условий
+    local availableActions = {}
+    for _, action in ipairs(INTERACTIONS) do
+        -- Если условия нет, или условие возвращает true
+        if not action.Condition or action.Condition(targetPlayer) == true then
+            table.insert(availableActions, action)
+        end
+    end
+
+    -- Если ни одно действие не доступно, не создаем панель вообще
+    if #availableActions == 0 then return end
+
     local bgu = Instance.new("BillboardGui", self.Gui)
     bgu.Adornee = head
     bgu.StudsOffset = Vector3.new(0, 5.0, 0)
@@ -311,7 +345,8 @@ function Interaction:CreateActionDock(head, targetPlayer)
 
     local buttonWidth = 85
     local spacing = 6
-    local totalWidth = (#INTERACTIONS * buttonWidth) + ((#INTERACTIONS - 1) * spacing) + 16
+    -- Считаем ширину на основе реально доступных (отфильтрованных) кнопок
+    local totalWidth = (#availableActions * buttonWidth) + ((#availableActions - 1) * spacing) + 16
     local totalHeight = 40
     bgu.Size = UDim2.fromOffset(totalWidth, totalHeight)
 
@@ -334,7 +369,7 @@ function Interaction:CreateActionDock(head, targetPlayer)
 
     local createdButtons = {}
 
-    for _, action in ipairs(INTERACTIONS) do
+    for _, action in ipairs(availableActions) do
         local btn = Instance.new("TextButton", mainFrame)
         btn.Size = UDim2.fromOffset(buttonWidth, 28)
         btn.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
@@ -447,16 +482,14 @@ UserInputService.InputBegan:Connect(function(input, proc)
     end
 end)
 
-
 -- [[ АВТОМАТИЗАЦИЯ ИГРЫ (ОСНОВНОЙ ФУНКЦИОНАЛ) ]]
 local function setupCharacter(char)
+    if not char then return end
 	LocalPlayer:SetAttribute("BodyAura", 12)
 	LocalPlayer:SetAttribute("FistAura", 1)
-    if not char then return end
     char:WaitForChild("Humanoid").Died:Connect(function()
         task.wait(2)
-        local btn = LocalPlayer.PlayerGui.IntroGui.PlayButton
-        firesignal(btn.MouseButton1Click)
+		respawn()
         msg.Mini("Coral", "You have died", 2)
     end)
     char:WaitForChild("Humanoid").Changed:Connect(function(property)
@@ -473,11 +506,6 @@ local function setupCharacter(char)
 			if states.farmingpos and add.distTo(states.farmingpos) > 15 then teleport(states.farmingpos, 5) end
         end
     end)
-	char:WaitForChild("HumanoidRootPart").Changed:Connect(function(property)
-		if property == "Position" or property == "CFrame" then
-			if states.farmingpos and add.distTo(states.farmingpos) > 15 then teleport(states.farmingpos, 5) end
-		end
-	end)
     char.ChildAdded:Connect(function(child)
         if child.Name == "KillingIntentAura" then
             child.Size = Vector3.new(50, 30, 50)
@@ -491,18 +519,25 @@ local function setupCharacter(char)
     end)
     Events:WaitForChild("UseSkill"):FireServer("ConcealAura")
 	if LocalPlayer.Backpack:FindFirstChild("GhostBike") then LocalPlayer.Backpack.GhostBike:Destroy() end
+	task.wait(0.5)
+	camera.CameraSubject = char.Humanoid; camera.CameraType = Enum.CameraType.Follow
+    PlayerGui.MainGui.Enabled = true; PlayerGui.IntroGui.Enabled = false; Lighting.Blur.Enabled = false
 end
 setupCharacter(character)
+
+workspace.ChildAdded:Connect(function(child)
+    if child.Name:find("Crate") then task.wait(0.5)
+		local rarity = child:GetAttribute("Rarity")
+		if not states.crates or not states.crates[rarity] then return end
+        msg.Mini("Honey", ("%s Crate has spawned"):format(rarity), 10, function()
+			collect_crates(child.Name)
+		end)
+    end
+end)
 
 LocalPlayer.CharacterAdded:Connect(function(char)
     character = char
     setupCharacter(character)
-    task.wait(1.5)
-    workspace.CurrentCamera.CameraSubject = character.Humanoid
-    workspace.CurrentCamera.CameraType = Enum.CameraType.Follow
-    LocalPlayer.PlayerGui.MainGui.Enabled = true
-    LocalPlayer.PlayerGui.IntroGui.Enabled = false
-    Lighting.Blur.Enabled = false
 end)
 
 -- Авто-фарм квестов по времени
@@ -568,7 +603,6 @@ local function datatows(data: table, delay: number)
 end
 
 local function changeActivity()
-	states.autofarm = true
 	local farm;
 	local upd = datatows({
 		TPM = conv.ToLetters(LocalPlayer:GetAttribute("FinalTPM")),
@@ -576,7 +610,7 @@ local function changeActivity()
 		BodyToughness = conv.ToLetters(LocalPlayer:GetAttribute("BodyToughness")),
 	}, 1)
 	farm = task.spawn(function()
-		while states.autofarm do task.wait()
+		while states.farmingpos ~= nil do task.wait()
 			if not character then break end
 			for _,data in zones do
 				local startstat = LocalPlayer:GetAttribute(data.stat)
@@ -586,7 +620,7 @@ local function changeActivity()
 				equipitem(data.item)
 				repeat task.wait() until not character:FindFirstChild("ForceField")
 				task.wait(0.5); useskill(data.skill)
-				msg.Mini("Sky", "Activity Changed", 1200, function() task.cancel(farm); task.cancel(upd); if data.skill then useskill(data.skill) end; states.autofarm = false; states.farmingpos = nil; msg.Mini("Pink", "Click on me to restart", 0, function() changeActivity() end) end); task.wait(1200)
+				msg.Mini("Sky", "Activity Changed", 1200, function() task.cancel(farm); task.cancel(upd); if data.skill then useskill(data.skill) end; states.farmingpos = nil; msg.Mini("Pink", "Click on me to restart", 0, function() changeActivity() end) end); task.wait(1200)
 				print(("Farmed %s of %s"):format(conv.ToLetters(LocalPlayer:GetAttribute(data.stat)-startstat), data.stat))
 			end
 		end
