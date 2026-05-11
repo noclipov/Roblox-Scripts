@@ -702,10 +702,14 @@ local zones = {
 	},
 }
 
-local function datatows(data: table, delay: number)
+local function datatows(delay: number)
 	return task.spawn(function()
 		while true do
-			ws:Send(data)
+			ws:Send({
+				TPM = conv.ToLetters(LocalPlayer:GetAttribute("FinalTPM")),
+				PsychicPower = conv.ToLetters(LocalPlayer:GetAttribute("PsychicPower")),
+				BodyToughness = conv.ToLetters(LocalPlayer:GetAttribute("BodyToughness")),
+			})
 			task.wait(delay)
 		end
 	end)
@@ -713,11 +717,7 @@ end
 
 local function changeActivity()
 	local farm;
-	local upd = datatows({
-		TPM = conv.ToLetters(LocalPlayer:GetAttribute("FinalTPM")),
-		PsychicPower = conv.ToLetters(LocalPlayer:GetAttribute("PsychicPower")),
-		BodyToughness = conv.ToLetters(LocalPlayer:GetAttribute("BodyToughness")),
-	}, 1)
+	local upd = datatows(1)
 	farm = task.spawn(function()
 		states.farmingpos = zones[1].pos
 		while states.farmingpos ~= nil do task.wait()
