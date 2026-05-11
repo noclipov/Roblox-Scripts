@@ -33,14 +33,19 @@ local STYLE = {
     Success = Color3.fromRGB(100, 255, 100),
     Distance = 60,
     MaxUiVisibleDistance = 80,
+    MaxMyUiVisibleDistance = 20,
 }
 
 local STATS_CONFIG = {
     ["Head"] = {Attr = "PsychicPower", Name = "Psychic Power", Emoji = "🧠", Color = Color3.fromRGB(200, 100, 255), Offset = Vector3.new(3, 2, 0)},
     ["UpperTorso"] = {Attr = "BodyToughness", Name = "Body Toughness", Emoji = "🛡️", Color = Color3.fromRGB(80, 255, 150), Offset = Vector3.new(-3.5, 0.5, 0)},
     ["RightUpperArm"] = {Attr = "FistStrength", Name = "Fist Strength", Emoji = "🦾", Color = Color3.fromRGB(255, 80, 80), Offset = Vector3.new(3.5, 0, 0)},
-    ["LeftUpperLeg"] = {Attr = "MovementSpeed", Name = "Movement Speed", Emoji = "⚡", Color = Color3.fromRGB(80, 200, 255), Offset = Vector3.new(-3, -2, 0)},
-    ["RightUpperLeg"] = {Attr = "JumpForce", Name = "Jump Force", Emoji = "🚀", Color = Color3.fromRGB(255, 200, 80), Offset = Vector3.new(3, -2, 0)},
+}
+
+local MY_STATS_OFFSETS = {
+    ["Head"] = Vector3.new(1.3, 1.0, 0),
+    ["UpperTorso"] = Vector3.new(-1.4, 0.2, 0),
+    ["RightUpperArm"] = Vector3.new(1.4, 0, 0),
 }
 
 -- [[ ТАБЛИЦА БЫСТРЫХ ВЗАИМОДЕЙСТВИЙ ]]
@@ -51,12 +56,10 @@ local INTERACTIONS = {
         Callback = function(targetPlayer)
             setclipboard(targetPlayer.Name)
         end
-        -- Без поля Condition — кнопка показывается всегда
     },
     {
         Name = "Squad", 
         Emoji = "👥", 
-        -- Условие появления: показывать только если игрок не в нашей группировке (Gang)
         Condition = function(targetPlayer)
             local myGang = LocalPlayer:GetAttribute("Gang")
             local targetGang = targetPlayer:GetAttribute("Gang")
@@ -70,7 +73,7 @@ local INTERACTIONS = {
 
 -- [[ ПЕРЕМЕННЫЕ СОСТОЯНИЯ ]]
 local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local states = {phychiczone = false, farmingpos = nil, crates={"Secret"}}
+local states = {phychiczone = false, farmingpos = nil, crates = {"Secret"}}
 local activeScanner = nil
 
 -- [[ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ]]
@@ -78,12 +81,12 @@ local respawn = LocalPlayer.PlayerGui.IntroGui.PlayButton.MouseButton1Click
 respawn = function() firesignal(respawn) end
 
 local function copyToClipboard(text)
-	local setC = setclipboard or toclipboard or (Clipboard and Clipboard.set)
-	if setC then
-		setC(tostring(text))
-	else
-		warn("Твой эксплоит не поддерживает копирование в буфер обмена!")
-	end
+    local setC = setclipboard or toclipboard or (Clipboard and Clipboard.set)
+    if setC then
+        setC(tostring(text))
+    else
+        warn("Твой эксплоит не поддерживает копирование в буфер обмена!")
+    end
 end
 
 local function useskill(name, arg)
@@ -121,7 +124,7 @@ local function collect_crate(crate, equip_psychic)
     task.wait(0.25)
     fireclickdetector(crate_primary:WaitForChild("ClickDetector"), 10)
     task.wait(1); teleport(lastpos, 3)
-    if equip_psychic then equipTool("PsychicPower") end
+    if equip_psychic then add.equipTool("PsychicPower") end
 end
 
 local function collect_crates(name)
@@ -155,7 +158,127 @@ RunService.RenderStepped:Connect(function()
     Highlight.Enabled = (target ~= nil)
 end)
 
--- [[ КЛАСС СИСТЕМЫ ИНТЕРФЕЙСА (СКАHEР) ]]
+
+-- [[ КЛАСС СИСТЕМЫ ИНТЕРФЕЙСА ДЛЯ СЕБЯ (ПОСТОЯННЫЙ) ]]
+local MyStatsTracker = {}
+MyStatsTracker.__index = MyStatsTracker
+
+function MyStatsTracker.new()
+    local self = setmetatable({}, MyStatsTracker)
+    self.Connections = {}
+    self.Gui = nil
+    self:Init()
+    return self
+end
+
+function MyStatsTracker:Init()
+    if self.Gui then self.Gui:Destroy() end
+    
+    local myChar = LocalPlayer.Character
+    if not myChar then return end
+
+    self.Gui = Instance.new("ScreenGui", PlayerGui)
+    self.Gui.Name = "MyPersonalScanner"
+    self.Gui.ResetOnSpawn = false
+
+    for partName, data in pairs(STATS_CONFIG) do
+        local part = myChar:FindFirstChild(partName)
+        if part then
+            local customOffset = MY_STATS_OFFSETS[partName] or data.Offset
+            self:CreateCallout(part, data, customOffset)
+        end
+    end
+end
+
+function MyStatsTracker:CreateCallout(part, data, offset)
+    local bgu = Instance.new("BillboardGui", self.Gui)
+    bgu.Adornee = part
+    bgu.StudsOffset = offset
+    bgu.AlwaysOnTop = true
+    bgu.Active = false -- Не кликабельно, чтобы не мешать управлению
+    bgu.Size = UDim2.fromOffset(100, 45)
+
+    local f = Instance.new("Frame", bgu)
+    f.Size = UDim2.fromScale(1, 1)
+    f.BackgroundColor3 = STYLE.Bg
+    f.BackgroundTransparency = 1
+    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 8)
+    
+    local stroke = Instance.new("UIStroke", f)
+    stroke.Color = data.Color
+    stroke.Thickness = 1.2
+    stroke.Transparency = 1
+
+    local title = Instance.new("TextLabel", f)
+    title.Size = UDim2.new(1, 0, 0, 18)
+    title.Position = UDim2.fromOffset(0, 4)
+    title.Text = data.Emoji .. " " .. data.Name
+    title.TextColor3 = Color3.fromRGB(200, 200, 200)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 10
+    title.BackgroundTransparency = 1
+    title.TextTransparency = 1
+
+    local valueLabel = Instance.new("TextLabel", f)
+    valueLabel.Size = UDim2.new(1, 0, 0, 20)
+    valueLabel.Position = UDim2.fromOffset(0, 18)
+    valueLabel.Text = "0"
+    valueLabel.TextColor3 = data.Color
+    valueLabel.Font = Enum.Font.GothamBlack
+    valueLabel.TextSize = 14
+    valueLabel.BackgroundTransparency = 1
+    valueLabel.TextTransparency = 1
+
+    local function updateValue()
+        local rawValue = LocalPlayer:GetAttribute(data.Attr) or 0
+        valueLabel.Text = conv.ToLetters(rawValue, 1)
+    end
+
+    local camConn = RunService.RenderStepped:Connect(function()
+        if not bgu.Parent or not workspace.CurrentCamera then return end
+        local camDist = (part.Position - workspace.CurrentCamera.CFrame.Position).Magnitude
+
+        -- Локальный игрок использует отдельный лимит (MaxMyUiVisibleDistance = 20)
+        if camDist > STYLE.MaxMyUiVisibleDistance then
+            f.BackgroundTransparency = 1
+            title.TextTransparency = 1
+            valueLabel.TextTransparency = 1
+            stroke.Transparency = 1
+        elseif camDist > (STYLE.MaxMyUiVisibleDistance - 6) then
+            -- Мягкое проявление на расстоянии последних 6 метров
+            local alpha = math.clamp((STYLE.MaxMyUiVisibleDistance - camDist) / 6, 0, 1)
+            f.BackgroundTransparency = 1 - (alpha * 0.8)
+            title.TextTransparency = 1 - alpha
+            valueLabel.TextTransparency = 1 - alpha
+            stroke.Transparency = 1 - alpha
+        else
+            f.BackgroundTransparency = 0.2
+            title.TextTransparency = 0
+            valueLabel.TextTransparency = 0
+            stroke.Transparency = 0
+        end
+    end)
+
+    table.insert(self.Connections, camConn)
+    
+    local attrConn = LocalPlayer:GetAttributeChangedSignal(data.Attr):Connect(updateValue)
+    table.insert(self.Connections, attrConn)
+    
+    updateValue()
+end
+
+function MyStatsTracker:Destroy()
+    for _, conn in ipairs(self.Connections) do
+        if conn then conn:Disconnect() end
+    end
+    if self.Gui then self.Gui:Destroy() end
+end
+
+-- Запуск трекера для себя
+local myTracker = MyStatsTracker.new()
+
+
+-- [[ КЛАСС СИСТЕМЫ ИНТЕРФЕЙСА (СКАHEР ДЛЯ ДРУГИХ ИГРОКОВ) ]]
 local Interaction = {}
 Interaction.__index = Interaction
 
@@ -178,7 +301,7 @@ function Interaction.new(targetPlayer)
 
     activeScanner = self
 
-    -- 1. Создание выносок со статистикой
+    -- 1. Выноски со статистикой цели (стандартные размашистые Offset)
     for partName, data in pairs(STATS_CONFIG) do
         local part = targetChar:FindFirstChild(partName)
         if part then
@@ -186,13 +309,13 @@ function Interaction.new(targetPlayer)
         end
     end
 
-    -- 2. Создание панели действий над головой
+    -- 2. Панель действий над головой цели
     local head = targetChar:FindFirstChild("Head")
     if head then
         self:CreateActionDock(head, targetPlayer)
     end
 
-    -- Отслеживание дистанции до цели
+    -- Дистанция до цели
     local distConn = RunService.Heartbeat:Connect(function()
         if not targetChar or not character or not character.PrimaryPart then 
             self:Destroy() 
@@ -260,7 +383,6 @@ function Interaction:CreateNumericCallout(part, data, targetPlayer)
         TweenService:Create(valueLabel, TweenInfo.new(0.3), {TextSize = 14}):Play()
     end
 
-    -- Эффекты наведения (Ховеры)
     local hoverIn = clickBtn.MouseEnter:Connect(function()
         TweenService:Create(stroke, TweenInfo.new(0.15), {
             Thickness = 2.5,
@@ -280,11 +402,11 @@ function Interaction:CreateNumericCallout(part, data, targetPlayer)
     table.insert(self.Connections, hoverIn)
     table.insert(self.Connections, hoverOut)
 
-    -- Расчет прозрачности от расстояния камеры
     local camConn = RunService.RenderStepped:Connect(function()
         if not bgu.Parent or not workspace.CurrentCamera then return end
         local camDist = (part.Position - workspace.CurrentCamera.CFrame.Position).Magnitude
 
+        -- Использует стандартный лимит MaxUiVisibleDistance = 80
         if camDist > STYLE.MaxUiVisibleDistance then
             f.BackgroundTransparency = 1
             title.TextTransparency = 1
@@ -305,7 +427,6 @@ function Interaction:CreateNumericCallout(part, data, targetPlayer)
     end)
     table.insert(self.Connections, camConn)
 
-    -- Копирование при клике
     local clickConn = clickBtn.MouseButton1Click:Connect(function()
         copyToClipboard(valueLabel.Text)
         local originalColor = stroke.Color
@@ -325,16 +446,13 @@ function Interaction:CreateNumericCallout(part, data, targetPlayer)
 end
 
 function Interaction:CreateActionDock(head, targetPlayer)
-    -- Фильтруем список действий на основе условий
     local availableActions = {}
     for _, action in ipairs(INTERACTIONS) do
-        -- Если условия нет, или условие возвращает true
         if not action.Condition or action.Condition(targetPlayer) == true then
             table.insert(availableActions, action)
         end
     end
 
-    -- Если ни одно действие не доступно, не создаем панель вообще
     if #availableActions == 0 then return end
 
     local bgu = Instance.new("BillboardGui", self.Gui)
@@ -345,7 +463,6 @@ function Interaction:CreateActionDock(head, targetPlayer)
 
     local buttonWidth = 85
     local spacing = 6
-    -- Считаем ширину на основе реально доступных (отфильтрованных) кнопок
     local totalWidth = (#availableActions * buttonWidth) + ((#availableActions - 1) * spacing) + 16
     local totalHeight = 40
     bgu.Size = UDim2.fromOffset(totalWidth, totalHeight)
@@ -522,13 +639,15 @@ local function setupCharacter(char)
 	task.wait(0.5)
 	camera.CameraSubject = char.Humanoid; camera.CameraType = Enum.CameraType.Follow
     PlayerGui.MainGui.Enabled = true; PlayerGui.IntroGui.Enabled = false; Lighting.Blur.Enabled = false
+	myTracker:Init()
 end
 setupCharacter(character)
 
+-- Отслеживание спавна сундуков
 workspace.ChildAdded:Connect(function(child)
     if child.Name:find("Crate") then task.wait(0.5)
 		local rarity = child:GetAttribute("Rarity")
-		if not states.crates or not states.crates[rarity] then return end
+		if not states.crates or not table.find(states.crates, rarity) then return end
         msg.Mini("Honey", ("%s Crate has spawned"):format(rarity), 10, function()
 			collect_crates(child.Name)
 		end)
@@ -584,13 +703,6 @@ local zones = {
 		tool=nil,
 		skill=nil
 	},
-	-- {
-	-- 	stat="FistStrength",
-	-- 	pos=Vector3.new(272, 1158.24, -3025),
-	-- 	item="OrangePlasma",
-	-- 	tool=nil,
-	-- 	skill=nil
-	-- },
 }
 
 local function datatows(data: table, delay: number)
@@ -626,9 +738,6 @@ local function changeActivity()
 		end
 	end)
 end
-
--- Players.PlayerAdded:Connect(changeActivity)
--- Players.PlayerRemoving:Connect(changeActivity)
 
 -- Зоны тренировок
 for _, box in pairs(workspace.Main.TrainingAreasHitBoxes.PS:GetChildren()) do
