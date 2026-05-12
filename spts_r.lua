@@ -627,8 +627,6 @@ end)
 -- [[ АВТОМАТИЗАЦИЯ ИГРЫ (ОСНОВНОЙ ФУНКЦИОНАЛ) ]]
 local function setupCharacter(char)
     if not char then return end
-	LocalPlayer:SetAttribute("BodyAura", 12)
-	LocalPlayer:SetAttribute("FistAura", 1)
     char:WaitForChild("Humanoid").Died:Connect(function()
         task.wait(2)
 		firesignal(LocalPlayer.PlayerGui.IntroGui.PlayButton.MouseButton1Click)
@@ -660,8 +658,8 @@ local function setupCharacter(char)
 		end
     end)
     Events:WaitForChild("UseSkill"):FireServer("ConcealAura")
-	if LocalPlayer.Backpack:FindFirstChild("GhostBike") then LocalPlayer.Backpack.GhostBike:Destroy() end
 	task.wait(0.5)
+	if LocalPlayer.Backpack:FindFirstChild("GhostBike") then LocalPlayer.Backpack.GhostBike:Destroy() end
 	camera.CameraSubject = char.Humanoid; camera.CameraType = Enum.CameraType.Follow
     PlayerGui.MainGui.Enabled = true; PlayerGui.IntroGui.Enabled = false; Lighting.Blur.Enabled = false
 	myTracker:Init()
@@ -778,7 +776,7 @@ local function changeActivity()
 			for _,data in zones do
 				local startstat = LocalPlayer:GetAttribute(data.stat)
 				setup_zone(data)
-				msg.Mini("Wine", "Activity Changed", 1200, function() task.cancel(farm); task.cancel(upd); if data.skill then useskill(data.skill) end; states.farmingpos = nil; msg.Mini("Wine", "Farming stopped", 0, function() changeActivity() end) end); task.wait(1200)
+				msg.Mini("Wine", "Activity Changed", 3600, function() task.cancel(farm); task.cancel(upd); if data.skill then useskill(data.skill) end; states.farmingpos = nil; msg.Mini("Wine", "Farming stopped", 0, function() changeActivity() end) end); task.wait(3600)
 				print(("Farmed %s of %s"):format(conv.ToLetters(LocalPlayer:GetAttribute(data.stat)-startstat), data.stat))
 			end
 		end
