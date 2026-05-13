@@ -27,7 +27,7 @@ local Events = ReplicatedStorage:WaitForChild("RemoteEvents")
 
 -- [[ ПЕРЕМЕННЫЕ СОСТОЯНИЯ ]]
 local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local states = {phychiczone = false, farmingpos = nil, crates = {"Secret"}}
+local states = {phychiczone = false, farming = nil, crates = {"Secret"}}
 local activeScanner = nil
 
 -- [[ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ]]
@@ -41,20 +41,29 @@ local function copyToClipboard(text)
 end
 
 local function useskill(name, arg)
-	if not name then return end
+	if not name or not character then return end
 	local args = {[1]=name} 
 	if arg then args[2] = arg end
 	Events:WaitForChild("UseSkill"):FireServer(unpack(args))
 end
 
 local function teleport(position, spread)
+	if not character then return end
     position = position or character.PrimaryPart.Position
     spread = (spread and spread > -1) and spread or 5
+	local had_kia
+	if character:FindFirstChild("KillingIntentAura") then
+		useskill("KillingIntentAura")
+		had_kia = true
+		task.wait(0.1)
+	end
     if spread > 0 then
         useskill("Teleport", Vector3.new(position.X + math.random(-spread, spread), position.Y, position.Z + math.random(-spread, spread)))
     else
-        if character then character.PrimaryPart.CFrame = CFrame.new(position) end
+        character.PrimaryPart.CFrame = CFrame.new(position)
     end
+	if had_kia then task.spawn(function() task.wait(1); useskill("KillingIntentAura") end) end
+	return character.PrimaryPart.Position
 end
 
 local function equipitem(name)
@@ -68,10 +77,9 @@ local function equipitem(name)
 end
 
 local function collect_crate(crate, equip_psychic)
-    local lastpos = character.PrimaryPart.Position
 	local crate_primary = crate:WaitForChild("Meshes/CRATEFORSPTS_Cube")
-    local crate_position = crate_primary.Position or lastpos
-    add.equipTool(); teleport(crate_position, 2)
+    local crate_position = crate_primary.Position
+    add.equipTool(); local lastpos=teleport(crate_position, 2)
     task.wait(0.25)
     fireclickdetector(crate_primary:WaitForChild("ClickDetector"), 10)
     task.wait(1); teleport(lastpos, 3)
@@ -83,6 +91,20 @@ local function collect_crates(name)
 		collect_crate(workspace:FindFirstChild(name), character:FindFirstChild("PsychicPower") and true or false)
 		task.wait(2)
 	end
+end
+
+local function setup_zone(data)
+	states.farming = data; task.wait(0.2)
+	if data == nil or data == {} then return end
+	if add.distTo(data.pos) > 15 then teleport(data.pos, data.spread) end
+	add.equipTool(data.tool)
+	equipitem(data.item)
+	repeat task.wait() until not character:FindFirstChild("ForceField")
+	task.wait(0.5); if data.skill_condition and data.skill_condition() or not data.skill_condition then useskill(data.skill) end
+end
+
+local function calculateNextPosition(currentPosition, velocity, extra)
+    return currentPosition + velocity.Unit*extra
 end
 
 scanner.Init({
@@ -187,7 +209,7 @@ local function setupCharacter(char)
 					add.EquipTool("PsychicPower")
 				end
 			end
-			if states.farmingpos and add.distTo(states.farmingpos) > 15 then teleport(states.farmingpos, 5) end
+			setup_zone(states.farming)
         end
     end)
     char.ChildAdded:Connect(function(child)
@@ -201,7 +223,7 @@ local function setupCharacter(char)
             child:WaitForChild("KillingIntentAura"):Destroy()
 		end
     end)
-    useskill("ConcealAura"); task.wait(0.5); add.removeTool("GhostBike")
+    useskill("ConcealAura"); task.wait(0.5); add.removeTool("GhostBike"); setup_zone(states.farming)
 	camera.CameraSubject = char.Humanoid; camera.CameraType = Enum.CameraType.Custom
     PlayerGui.MainGui.Enabled = true; PlayerGui.IntroGui.Enabled = false; Lighting.Blur.Enabled = false
 end
@@ -235,6 +257,30 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     setupCharacter(character)
 end)
 
+local spheres = {}
+for i,v in pairs(game:GetService("ReplicatedStorage").Visuals.Skills.EnergySpheres:GetChildren()) do table.insert(spheres, v.Name) end
+
+workspace.ChildAdded:Connect(function(child)
+    if table.find(spheres, child.Name) then
+        local whileloop
+        child.Destroying:Connect(function() task.cancel(whileloop) end)
+        whileloop = task.spawn(function()
+			local mindist =child.Size.X*2.5
+            while true do
+                local nextpos = calculateNextPosition(child.Position, child.Velocity, 50)
+                if add.distTo(nextpos) <= (mindist) or add.distTo(child.Position) <= (mindist) then
+					local lastpos 
+					repeat lastpos = teleport(Vector3.new(nextpos.X, character.PrimaryPart.Position.Y, nextpos.Z), child.Size.X*3.1)
+					until add.distTo(nextpos) > (mindist) and add.distTo(child.Position) > (mindist)
+					task.wait(1)
+                    teleport(lastpos, 7)
+                end
+                task.wait()
+            end
+        end)
+    end
+end)
+
 -- Авто-фарм квестов по времени
 task.spawn(function()
     while true do task.wait(1)
@@ -261,10 +307,11 @@ local zones = {
 	{
 		stat="FinalTPM",
 		pos=Vector3.new(193, 248.42, 845),
-		spread=4,
+		spread=0,
 		item=nil,
 		tool=nil,
-		skill="KillingIntentAura"
+		skill="KillingIntentAura",
+		skill_condition = function() return not character:FindFirstChild("KillingIntentAura") end
 	},
 	{
 		stat="PsychicPower",
@@ -272,7 +319,8 @@ local zones = {
 		spread=10,
 		item="ZeusStrike",
 		tool="PsychicPower",
-		skill="KillingIntentAura"
+		skill="KillingIntentAura",
+		skill_condition = function() return character:FindFirstChild("KillingIntentAura") end
 	},
 	{
 		stat="BodyToughness",
@@ -297,27 +345,25 @@ local function datatows(delay: number)
 	end)
 end
 
-local function setup_zone(data)
-	states.farmingpos = data.pos; task.wait(0.2)
-	if add.distTo(data.pos) > 15 then teleport(data.pos, data.spread) end
-	add.equipTool(data.tool)
-	equipitem(data.item)
-	repeat task.wait() until not character:FindFirstChild("ForceField")
-	task.wait(0.5); useskill(data.skill)
-end
-
 local function changeActivity()
 	local farm;
 	local upd = datatows(1)
 	farm = task.spawn(function()
-		states.farmingpos = zones[1].pos
-		while states.farmingpos ~= nil do task.wait()
+		states.farming = zones[1]
+		while states.farming ~= nil do task.wait()
 			if not character then break end
 			for _,data in zones do
-				local startstat = LocalPlayer:GetAttribute(data.stat)
 				setup_zone(data)
-				msg.Mini("Wine", "Activity Changed", 3600, function() task.cancel(farm); task.cancel(upd); if data.skill then useskill(data.skill) end; states.farmingpos = nil; msg.Mini("Wine", "Farming stopped", 0, function() changeActivity() end) end); task.wait(3600)
-				print(("Farmed %s of %s"):format(conv.ToLetters(LocalPlayer:GetAttribute(data.stat)-startstat), data.stat))
+				msg.Mini("Wine", "Auto-farm: Working", 3600, function() 
+					task.cancel(farm)
+					task.cancel(upd)
+					if data.skill then useskill(data.skill) end
+					setup_zone(nil)
+					msg.Mini("Wine", "Auto-farm: Disabled", 0, function() 
+						changeActivity() 
+					end) 
+				end)
+				task.wait(3600)
 			end
 		end
 	end)
