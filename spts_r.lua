@@ -404,9 +404,9 @@ for _, box in pairs(workspace.Main.TrainingAreasHitBoxes.PS:GetChildren()) do
 	box.TouchEnded:Connect(function(part) if character and part == character.PrimaryPart then states.phychiczone = false end end)
 end
 
-add.chatFilter(function(msg, ply)
+add.chatFilter(function(msg, src)
 	local text = msg.Text
-	if ply.UserId == LocalPlayer.UserId and (text:find("Tokens") or text:find("TPM") or text:find("VIP")) then return false, nil end
+	if src == nil and (text:find("Tokens") or text:find("TPM") or text:find("VIP")) then return false, nil end
 	return true, nil
 end)
 
