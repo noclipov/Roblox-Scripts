@@ -405,10 +405,10 @@ for _, box in pairs(workspace.Main.TrainingAreasHitBoxes.PS:GetChildren()) do
 end
 
 add.chatFilter(function(msg, src)
-	local text = msg.Text
-	if src == nil and (text:find("Tokens") or text:find("TPM") or text:find("VIP")) then return false, nil end
-	return true, nil
-end)
+    local text = msg.Text
+    if src.UserId == LocalPlayer.UserId and (text:find("Tokens") or text:find("TPM") or text:find("VIP")) then return false end
+    return true
+end, false)
 
 -- ==========================================
 -- [11. СТАРТОВАЯ ИНИЦИАЛИЗАЦИЯ РАНГА]
