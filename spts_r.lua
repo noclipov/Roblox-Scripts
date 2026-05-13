@@ -96,7 +96,7 @@ scanner.Init({
 		MaxUiVisibleDistance = 80,
 	},
 	LocalSetup = {
-        MaxUiVisibleDistance = 30, -- Твои статы начнут плавно исчезать уже на расстоянии 40 стадс
+        MaxUiVisibleDistance = 20, -- Твои статы начнут плавно исчезать уже на расстоянии 40 стадс
         Offsets = {
 			["Head"] = Vector3.new(1.3, 1.0, 0),
 			["UpperTorso"] = Vector3.new(-1.4, 0.2, 0),
@@ -135,7 +135,6 @@ plm.Init({
     {
         Emoji = "👥",
         Condition = function(targetPlayer)
-            -- Пример проверки: показывать кнопку инвайта только если мы в банде
             local myGang = game.Players.LocalPlayer:GetAttribute("Gang")
             return (myGang ~= nil and myGang ~= "")
         end,
@@ -147,7 +146,7 @@ plm.Init({
     {
         Emoji = "💢",
         Condition = function(targetPlayer)
-            return targetPlayer.Character and targetPlayer.Character.Humanoid.Health > 0 and targetPlayer:GetAttribute("PsychicPower")*100<=game.Players.LocalPlayer:GetAttribute("PsychicPower")
+            return targetPlayer.Character and targetPlayer.Character:FindFirstChild("Humanoid") and targetPlayer.Character.Humanoid.Health > 0 and targetPlayer:GetAttribute("PsychicPower")*100<=game.Players.LocalPlayer:GetAttribute("PsychicPower")
         end,
         Callback = function(targetPlayer)
             local char = targetPlayer.Character
@@ -163,9 +162,19 @@ plm.Init({
 local function setupCharacter(char)
     if not char then return end
     char:WaitForChild("Humanoid").Died:Connect(function()
-        msg.Mini("Coral", "You have died", 2)
-        task.wait(5)
-		firesignal(LocalPlayer.PlayerGui.IntroGui.PlayButton.MouseButton1Click)
+        msg.Mini("Coral", "You have died", 2); task.wait(2)
+        add.toggleCoreGui(Enum.CoreGuiType.PlayerList, true)
+        add.toggleCoreGui(Enum.CoreGuiType.Chat, true)
+        add.toggleCoreGui(Enum.CoreGuiType.Backpack, true)
+        camera.CameraType = Enum.CameraType.Custom
+		repeat PlayerGui.IntroGui.Enabled = false
+		until not PlayerGui.IntroGui.Enabled
+        if LocalPlayer:GetAttribute("CharacterLoaded") then
+            for _, gui in pairs({ "MainGui", "QuestsGui" }) do
+                PlayerGui[gui].Enabled = true
+            end
+        end
+        Events.RefreshCharacter:FireServer()
     end)
     char:WaitForChild("Humanoid").Changed:Connect(function(property)
         if property == "MoveDirection" then
@@ -183,7 +192,7 @@ local function setupCharacter(char)
     end)
     char.ChildAdded:Connect(function(child)
         if child.Name == "KillingIntentAura" then
-            child.Size = Vector3.new(45, 25, 45)
+            child.Size = Vector3.new(55, 25, 55)
 			child.Material = Enum.Material.ForceField
 			child.Color = Color3.fromRGB(110, 50, 220)
 			child.Transparency = 0.75
@@ -192,10 +201,8 @@ local function setupCharacter(char)
             child:WaitForChild("KillingIntentAura"):Destroy()
 		end
     end)
-    Events:WaitForChild("UseSkill"):FireServer("ConcealAura")
-	task.wait(0.5)
-	if LocalPlayer.Backpack:FindFirstChild("GhostBike") then LocalPlayer.Backpack.GhostBike:Destroy() end
-	camera.CameraSubject = char.Humanoid; camera.CameraType = Enum.CameraType.Follow
+    useskill("ConcealAura"); task.wait(0.5); add.removeTool("GhostBike")
+	camera.CameraSubject = char.Humanoid; camera.CameraType = Enum.CameraType.Custom
     PlayerGui.MainGui.Enabled = true; PlayerGui.IntroGui.Enabled = false; Lighting.Blur.Enabled = false
 end
 setupCharacter(character)
@@ -205,17 +212,21 @@ workspace.ChildAdded:Connect(function(child)
     if child.Name:find("Crate") then task.wait(0.5)
 		local rarity = child:GetAttribute("Rarity")
 		if not states.crates or not table.find(states.crates, rarity) then return end
-        msg.Mini("Peach", ("%s Crate has spawned"):format(rarity), 10, function()
-			collect_crates(child.Name)
-		end)
+		if Players.numPlayers > 1 then
+			msg.Mini("Peach", ("%s Crate has spawned"):format(rarity), 10, function()
+				collect_crates(child.Name)
+			end)
+		else collect_crates(child.Name) end
     end
 end)
 
 game:GetService("CoreGui").RobloxGui.NotificationFrame.ChildAdded:Connect(function(child)
     game:GetService("CoreGui").RobloxGui.NotificationFrame.Visible = false
-	if not child or #(child:GetChildren()) ==0 then return end
-    local title = childNotificationTitle.Text
-    local text = childNotificationText.Text
+	if not child or #(child:GetChildren()) == 0 then return end
+    local title = child.NotificationTitle.Text
+    local text = child.NotificationText.Text
+	task.wait(0.1)
+	child:Destroy()
 	msg.New("Vanilla", title, text, 5)
 end)
 
