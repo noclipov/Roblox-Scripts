@@ -85,13 +85,29 @@ local function equipitem(name)
 	for _, item in ipairs(inventory.Equipped) do
 		Events:WaitForChild("UnequipItem"):FireServer(item)
 		task.wait(0.05)
+		Events:WaitForChild("EquipItem"):FireServer(name)
 	end
-	Events:WaitForChild("EquipItem"):FireServer(name)
 end
 
 -- ==========================================
 -- [5. ЛОГИКА СУНДУКОВ И ТРЕНИРОВОЧНЫХ ЗОН]
 -- ==========================================
+local function setup_zone(data)
+	states.farming = data
+	if data == nil or next(data) == nil then return end
+	if not character or not character.PrimaryPart then return end
+	
+	if add.distTo(data.pos) > 15 then teleport(data.pos, data.spread) end
+	add.equipTool(data.tool)
+	equipitem(data.item)
+	
+	repeat task.wait(0.1) until not character:FindFirstChild("ForceField")
+	
+	if data.skill and (not data.skill_condition or data.skill_condition()) then 
+		useskill(data.skill) 
+	end
+end
+
 local function collect_crate(crate, equip_psychic)
 	local crate_primary = crate:WaitForChild("Meshes/CRATEFORSPTS_Cube", 5)
 	if not crate_primary then return end
@@ -116,26 +132,6 @@ local function collect_crates(name)
 	end
 end
 
-local function setup_zone(data)
-	states.farming = data
-	if data == nil or next(data) == nil then return end
-	if not character or not character.PrimaryPart then return end
-	
-	if add.distTo(data.pos) > 15 then teleport(data.pos, data.spread) end
-	add.equipTool(data.tool)
-	equipitem(data.item)
-	
-	repeat task.wait(0.1) until not character:FindFirstChild("ForceField")
-	
-	if data.skill and (not data.skill_condition or data.skill_condition()) then 
-		useskill(data.skill) 
-	end
-end
-
-local function calculateNextPosition(currentPosition, velocity, extra)
-	return currentPosition + (velocity.Magnitude > 0 and velocity.Unit or Vector3.new(0,0,0)) * extra
-end
-
 -- ==========================================
 -- [6. ИНИЦИАЛИЗАЦИЯ ИНТЕРФЕЙСОВ (UI)]
 -- ==========================================
@@ -143,29 +139,30 @@ scanner.Init({
 	Style = {
 		Accent = Color3.fromRGB(140, 100, 255), Highlight = Color3.fromRGB(180, 160, 255),
 		Bg = Color3.fromRGB(15, 15, 20), Text = Color3.fromRGB(255, 255, 255),
-		Success = Color3.fromRGB(100, 255, 100), Distance = 60, MaxUiVisibleDistance = 80,
+		Success = Color3.fromRGB(100, 255, 100), Distance = 40, MaxUiVisibleDistance = 60,
 	},
 	LocalSetup = {
-		MaxUiVisibleDistance = 20,
+		MaxUiVisibleDistance = 30,
 		Offsets = {
-			["Head"] = Vector3.new(1.3, 1.0, 0),
-			["UpperTorso"] = Vector3.new(-1.4, 0.2, 0),
 			["RightUpperArm"] = Vector3.new(1.4, 0, 0),
+			["UpperTorso"] = Vector3.new(-1.4, 0.2, 0),
+			["Head"] = Vector3.new(1.3, 1.0, 0),
 		}
 	},
 	StatsConfig = {
-		["Head"] = {Attr = "PsychicPower", Name = "Psychic Power", Emoji = "🧠", Color = Color3.fromRGB(200, 100, 255), Offset = Vector3.new(3, 2, 0)},
-		["UpperTorso"] = {Attr = "BodyToughness", Name = "Body Toughness", Emoji = "🛡️", Color = Color3.fromRGB(80, 255, 150), Offset = Vector3.new(-3.5, 0.5, 0)},
 		["RightUpperArm"] = {Attr = "FistStrength", Name = "Fist Strength", Emoji = "🦾", Color = Color3.fromRGB(255, 80, 80), Offset = Vector3.new(3.5, 0, 0)},
+		["UpperTorso"] = {Attr = "BodyToughness", Name = "Body Toughness", Emoji = "🛡️", Color = Color3.fromRGB(80, 255, 150), Offset = Vector3.new(-3.5, 0.5, 0)},
+		["Head"] = {Attr = "PsychicPower", Name = "Psychic Power", Emoji = "🧠", Color = Color3.fromRGB(200, 100, 255), Offset = Vector3.new(3, 2, 0)},
 	},
 	Interactions = {
-		{Name = "Nick", Emoji = "👤", Callback = function(targetPlayer) copyToClipboard(targetPlayer.Name) end},
-		{
-			Name = "Squad", Emoji = "👥", 
+		{Name = "Nick", Emoji = "👤", 
+			Callback = function(targetPlayer) copyToClipboard(targetPlayer.Name) end
+		},
+		{Name = "Squad", Emoji = "👥", 
 			Condition = function(targetPlayer)
 				local myGang = LocalPlayer:GetAttribute("Gang")
 				local targetGang = targetPlayer:GetAttribute("Gang")
-				return (myGang ~= nil and myGang ~= "") and myGang ~= targetGang
+				return (myGang ~= "Not In A Clan") and myGang ~= targetGang
 			end,
 			Callback = function(targetPlayer) Events.GangRemotes.Invite:FireServer(targetPlayer.UserId) end
 		},
@@ -247,6 +244,7 @@ local function setupCharacter(char)
 	end)
 	
 	useskill("ConcealAura")
+	Events:WaitForChild("ChangeRank"):FireServer(9)
 	task.wait(0.3)
 	add.removeTool("GhostBike")
 	setup_zone(states.farming)
@@ -296,39 +294,7 @@ workspace.ChildAdded:Connect(function(child)
 end)
 
 -- ==========================================
--- [9. МОНИТОРИНГ И УКЛОНЕНИЕ ОТ СФЕР]
--- ==========================================
-local spheres = {}
-for _, v in ipairs(ReplicatedStorage.Visuals.Skills.EnergySpheres:GetChildren()) do table.insert(spheres, v.Name) end
-
-workspace.ChildAdded:Connect(function(child)
-	if table.find(spheres, child.Name) then
-		local connection
-		connection = RunService.Heartbeat:Connect(function()
-			if not child or not child.Parent or not character or not character.PrimaryPart then 
-				connection:Disconnect() 
-				return 
-			end
-			
-			local mindist = child.Size.X * 2.5
-			local nextpos = calculateNextPosition(child.Position, child.Velocity, 50)
-			
-			if add.distTo(nextpos) <= mindist or add.distTo(child.Position) <= mindist then
-				local lastpos
-				repeat 
-					lastpos = teleport(Vector3.new(nextpos.X, character.PrimaryPart.Position.Y, nextpos.Z), child.Size.X * 3.1)
-					task.wait(0.05)
-				until not child or not child.Parent or (add.distTo(nextpos) > mindist and add.distTo(child.Position) > mindist)
-				
-				task.wait(0.5)
-				teleport(lastpos, 7)
-			end
-		end)
-	end
-end)
-
--- ==========================================
--- [10. ПОТОКИ АВТОМАТИЗАЦИИ И СЕТЕВАЯ ДАТА]
+-- [9. ПОТОКИ АВТОМАТИЗАЦИИ И СЕТЕВАЯ ДАТА]
 -- ==========================================
 task.spawn(function()
 	while true do 
@@ -351,14 +317,34 @@ end)
 
 local zones = {
 	{
-		stat = "FinalTPM", pos = Vector3.new(193, 248.42, 845), spread = 0, item = nil, tool = nil, skill = "KillingIntentAura",
-		skill_condition = function() return character and not character:FindFirstChild("KillingIntentAura") end
+		stat = "FinalTPM",
+		pos = Vector3.new(193, 248.42, 845),
+		spread = 0,
+		item = nil,
+		tool = nil,
+		skill = "KillingIntentAura",
+		skill_condition = function() return character and not character:FindFirstChild("KillingIntentAura") end,
+		time=3600*2
 	},
 	{
-		stat = "PsychicPower", pos = Vector3.new(-2312, 244.56, -363), spread = 10, item = "ZeusStrike", tool = "PsychicPower", skill = "KillingIntentAura",
-		skill_condition = function() return character and character:FindFirstChild("KillingIntentAura") end
+		stat = "PsychicPower",
+		pos = Vector3.new(-2312, 244.56, -363),
+		spread = 10,
+		item = "ZeusStrike",
+		tool = "PsychicPower",
+		skill = "KillingIntentAura",
+		skill_condition = function() return character and character:FindFirstChild("KillingIntentAura") end,
+		time=3600
 	},
-	{stat = "BodyToughness", pos = Vector3.new(-1206, 356.79, -3027), spread = 10, item = "ChampionsTrophy", tool = nil, skill = nil},
+	{
+		stat = "BodyToughness",
+		pos = Vector3.new(-1206, 356.79, -3027),
+		spread = 10,
+		item = "ChampionsTrophy",
+		tool = nil,
+		skill = nil,
+		time=3600
+	},
 }
 
 local function datatows(delay)
@@ -385,14 +371,14 @@ local function changeActivity()
 		while true do
 			for _, data in ipairs(zones) do
 				setup_zone(data)
-				msg.Mini("Wine", "Auto-farm: Working", 3600, function() 
+				msg.Mini("Wine", "Auto-farm: Working", data.time, function() 
 					if farmThread then task.cancel(farmThread) end
 					if wsDataThread then task.cancel(wsDataThread) end
 					if data.skill then useskill(data.skill) end
 					setup_zone(nil)
 					msg.Mini("Wine", "Auto-farm: Disabled", 0, function() changeActivity() end) 
 				end)
-				task.wait(3600)
+				task.wait(data.time)
 			end
 		end
 	end)
@@ -406,15 +392,15 @@ end
 
 add.chatFilter(function(msg, src)
     local text = msg.Text
-    if src.UserId == LocalPlayer.UserId and (text:find("Tokens") or text:find("TPM") or text:find("VIP")) then return false end
+    if src.UserId == LocalPlayer.UserId and (text:find("Tokens") or text:find("TPM") or text:find("VIP")) then return false 
+	elseif src.UserId == LocalPlayer.UserId and text:find("just unboxed a") then return false
+	end
     return true
 end, false)
 
 -- ==========================================
--- [11. СТАРТОВАЯ ИНИЦИАЛИЗАЦИЯ РАНГА]
+-- [10. СТАРТОВАЯ ИНИЦИАЛИЗАЦИЯ РАНГА]
 -- ==========================================
-Events:WaitForChild("ChangeRank"):FireServer(9)
-ReplicatedStorage:WaitForChild("EquipSavedRaceRF"):InvokeServer()
 
 msg.New("Mint", "Auth", "You have successfully logged in", 5)
 msg.Mini("Sakura", "Auto-farm: Disabled", 0, function() changeActivity() end)
