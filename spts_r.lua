@@ -357,8 +357,8 @@ local function datatows(delay)
 			pcall(function()
 				ws:Send({
 					TPM = conv.ToLetters(LocalPlayer:GetAttribute("FinalTPM") or 0),
-					PsychicPower = conv.ToLetters(LocalPlayer:GetAttribute("PsychicPower") or 0),
-					BodyToughness = conv.ToLetters(LocalPlayer:GetAttribute("BodyToughness") or 0),
+					Psychic_Power = conv.ToLetters(LocalPlayer:GetAttribute("PsychicPower") or 0),
+					Body_Toughness = conv.ToLetters(LocalPlayer:GetAttribute("BodyToughness") or 0),
 				})
 			end)
 			task.wait(delay)
