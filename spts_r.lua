@@ -7,10 +7,12 @@ local add = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanocli
 local wsm = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/Libs/wsm.lua"))()
 local plm = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/Libs/playerlist.lua"))()
 local scanner = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/Libs/scanner.lua"))()
+local scanner = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/scanner.lua"))()
 
 local ws = wsm.new("ws://localhost:1337/luau", 15)
 ws:Start()
 add.aa()
+add.fpsc()
 
 -- ==========================================
 -- [2. СЕРВИСЫ И КОНСТАНТЫ ROBLOX]
@@ -404,8 +406,3 @@ end, false)
 
 msg.New("Mint", "Auth", "You have successfully logged in", 5)
 msg.Mini("Sakura", "Auto-farm: Disabled", 0, function() changeActivity() end)
-
-game:GetService("RunService").RenderStepped:Connect(function()
-	if isrbxactive and not isrbxactive() then setfpscap(15)
-	else setfpscap(120) end
-end)
