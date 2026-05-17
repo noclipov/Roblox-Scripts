@@ -10,7 +10,7 @@ local scanner = loadstring(game:HttpGet("https://raw.githubusercontent.com/diman
 
 local ws = wsm.new("ws://localhost:1337/luau", 15)
 ws:Start()
-add.aa()
+add.afk()
 msg.Mini("Magma", "Enable fps control", 15, function()
 	add.fpsc()
 end)
