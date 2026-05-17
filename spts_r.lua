@@ -7,12 +7,13 @@ local add = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanocli
 local wsm = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/Libs/wsm.lua"))()
 local plm = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/Libs/playerlist.lua"))()
 local scanner = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/Libs/scanner.lua"))()
-local scanner = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/scanner.lua"))()
 
 local ws = wsm.new("ws://localhost:1337/luau", 15)
 ws:Start()
 add.aa()
-add.fpsc()
+msg.Mini("Magma", "Enable fps control", 15, function()
+	add.fpsc()
+end)
 
 -- ==========================================
 -- [2. СЕРВИСЫ И КОНСТАНТЫ ROBLOX]
