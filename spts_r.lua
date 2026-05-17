@@ -404,3 +404,8 @@ end, false)
 
 msg.New("Mint", "Auth", "You have successfully logged in", 5)
 msg.Mini("Sakura", "Auto-farm: Disabled", 0, function() changeActivity() end)
+
+game:GetService("RunService").RenderStepped:Connect(function()
+	if isrbxactive and not isrbxactive() then setfpscap(15)
+	else setfpscap(120) end
+end)
