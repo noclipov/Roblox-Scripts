@@ -35,7 +35,7 @@ local Events = ReplicatedStorage:WaitForChild("RemoteEvents")
 -- [3. СОСТОЯНИЕ И ПОТОКИ СКРИПТА]
 -- ==========================================
 local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local states = {phychiczone = false, farming = nil, crates = {"Secret"}}
+local states = {phychiczone = false, farming = nil, last_zone_id = nil, crates = {"Secret"}}
 local farmThread, wsDataThread
 
 -- ==========================================
@@ -84,9 +84,8 @@ local function equipitem(name)
 	if not name then return end
 	local success, inventory = pcall(function() return Events:WaitForChild("InventoryRF"):InvokeServer() end)
 	if not success or not inventory then return end
-	
-	for _, item in ipairs(inventory.Equipped) do
-		Events:WaitForChild("UnequipItem"):FireServer(item)
+	for i=1,3 do
+		if #inventory.Equipped >= i and inventory.Equipped[i] then Events:WaitForChild("UnequipItem"):FireServer(inventory.Equipped[i]) end
 		task.wait(0.05)
 		Events:WaitForChild("EquipItem"):FireServer(name)
 	end
@@ -106,7 +105,7 @@ local function setup_zone(data)
 	
 	repeat task.wait(0.1) until not character:FindFirstChild("ForceField")
 	
-	if data.skill and (not data.skill_condition or data.skill_condition()) then 
+	if data.skill and (data.skill_condition == nil or data.skill_condition and data.skill_condition()) then 
 		useskill(data.skill) 
 	end
 end
@@ -350,7 +349,7 @@ local zones = {
 	},
 }
 
-local function datatows(delay)
+local function datatows()
 	if wsDataThread then task.cancel(wsDataThread) end
 	wsDataThread = task.spawn(function()
 		while true do
@@ -361,23 +360,24 @@ local function datatows(delay)
 					Body_Toughness = conv.ToLetters(LocalPlayer:GetAttribute("BodyToughness") or 0),
 				})
 			end)
-			task.wait(delay)
 		end
 	end)
 end
 
 local function changeActivity()
 	if farmThread then task.cancel(farmThread) end
-	datatows(1)
-	
+	datatows()
 	farmThread = task.spawn(function()
 		while true do
 			for _, data in ipairs(zones) do
+				if states.last_zone_id and _ ~= states.last_zone_id then continue end
+				states.last_zone_id = nil
 				setup_zone(data)
 				msg.Mini("Wine", "Auto-farm: Working", data.time, function() 
 					if farmThread then task.cancel(farmThread) end
 					if wsDataThread then task.cancel(wsDataThread) end
-					if data.skill then useskill(data.skill) end
+					if data.skill and (data.skill_condition and data.skill_condition() or data.skill_condition == nil) then useskill(data.skill) end
+					states.last_zone_id = _
 					setup_zone(nil)
 					msg.Mini("Wine", "Auto-farm: Disabled", 0, function() changeActivity() end) 
 				end)
