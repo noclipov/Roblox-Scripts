@@ -1,15 +1,15 @@
 -- ==========================================
 -- [1. ЗАГРУЗКА БИБЛИОТЕК И МОДУЛЕЙ]
 -- ==========================================
-local conv = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/Libs/convs.lua"))()
-local msg = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/Libs/notify.lua"))()
-local add = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/Libs/additional.lua"))()
-local wsm = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/Libs/wsm.lua"))()
-local plm = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/Libs/playerlist.lua"))()
-local scanner = loadstring(game:HttpGet("https://raw.githubusercontent.com/dimanoclip/Roblox-Luas/main/Libs/scanner.lua"))()
+local conv = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/main/Libs/convs.lua"))()
+local msg = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/main/Libs/notify.lua"))()
+local add = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/main/Libs/additional.lua"))()
+-- local websocket = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/main/Libs/websocket.lua"))()
+local plm = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/main/Libs/playerlist.lua"))()
+local scanner = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/main/Libs/scanner.lua"))()
 
-local ws = wsm.new("ws://localhost:1337/luau", 15)
-ws:Start()
+-- local ws = websocket.new("ws://localhost:1337/luau", 15)
+-- ws:Start()
 add.afk()
 add.fpsc()
 
@@ -318,9 +318,9 @@ end)
 local zones = {
 	{
 		stat = "FinalTPM",
-		pos = Vector3.new(193, 248.42, 845),
+		pos = Vector3.new(383, 248.97, -113),
 		spread = 0,
-		item = nil,
+		item = "TokenAxe",
 		tool = nil,
 		skill = "KillingIntentAura",
 		skill_condition = function() return character and not character:FindFirstChild("KillingIntentAura") end,
@@ -328,8 +328,8 @@ local zones = {
 	},
 	{
 		stat = "PsychicPower",
-		pos = Vector3.new(-2312, 244.56, -363),
-		spread = 10,
+		pos = Vector3.new(-1040, 318.78, 1146),
+		spread = 5,
 		item = "ZeusStrike",
 		tool = "PsychicPower",
 		skill = "KillingIntentAura",
@@ -338,8 +338,8 @@ local zones = {
 	},
 	{
 		stat = "BodyToughness",
-		pos = Vector3.new(-1206, 356.79, -3027),
-		spread = 10,
+		pos = Vector3.new(-421, 270.45, 735),
+		spread = 5,
 		item = "ChampionsTrophy",
 		tool = nil,
 		skill = nil,
@@ -347,35 +347,32 @@ local zones = {
 	},
 }
 
-local function datatows()
-	if wsDataThread then task.cancel(wsDataThread) end
-	wsDataThread = task.spawn(function()
-		while true do
-			pcall(function()
-				ws:Send({
-					TPM = conv.ToLetters(LocalPlayer:GetAttribute("FinalTPM") or 0),
-					Psychic_Power = conv.ToLetters(LocalPlayer:GetAttribute("PsychicPower") or 0),
-					Body_Toughness = conv.ToLetters(LocalPlayer:GetAttribute("BodyToughness") or 0),
-				})
-			end)
-		end
-	end)
-end
+-- local function datatows()
+-- 	if wsDataThread then task.cancel(wsDataThread) end
+-- 	wsDataThread = task.spawn(function()
+-- 		while true do
+-- 			pcall(function()
+-- 				ws:Send({
+-- 					TPM = conv.ToLetters(LocalPlayer:GetAttribute("FinalTPM") or 0),
+-- 					Psychic_Power = conv.ToLetters(LocalPlayer:GetAttribute("PsychicPower") or 0),
+-- 					Body_Toughness = conv.ToLetters(LocalPlayer:GetAttribute("BodyToughness") or 0),
+-- 				})
+-- 			end)
+-- 		end
+-- 	end)
+-- end
 
 local function changeActivity()
 	if farmThread then task.cancel(farmThread) end
-	datatows()
+	-- datatows()
 	farmThread = task.spawn(function()
 		while true do
 			for _, data in ipairs(zones) do
-				if states.last_zone_id and _ ~= states.last_zone_id then continue end
-				states.last_zone_id = nil
 				setup_zone(data)
 				msg.Mini("Wine", "Auto-farm: Working", data.time, function() 
 					if farmThread then task.cancel(farmThread) end
-					if wsDataThread then task.cancel(wsDataThread) end
+					-- if wsDataThread then task.cancel(wsDataThread) end
 					if data.skill and (data.skill_condition and data.skill_condition() or data.skill_condition == nil) then useskill(data.skill) end
-					states.last_zone_id = _
 					setup_zone(nil)
 					msg.Mini("Wine", "Auto-farm: Disabled", 0, function() changeActivity() end) 
 				end)
@@ -391,10 +388,22 @@ for _, box in pairs(workspace.Main.TrainingAreasHitBoxes.PS:GetChildren()) do
 	box.TouchEnded:Connect(function(part) if character and part == character.PrimaryPart then states.phychiczone = false end end)
 end
 
+local patterns = {
+	"Tokens",
+	"just unboxed a",
+	"DROP",
+	"TPM",
+	"VIP",
+}
+
 add.chatFilter(function(msg, src)
     local text = msg.Text
-    if src.UserId == LocalPlayer.UserId and (text:find("Tokens") or text:find("TPM") or text:find("VIP")) then return false 
-	elseif src.UserId == LocalPlayer.UserId and text:find("just unboxed a") then return false
+	local is_self = src.UserId == LocalPlayer.UserId
+    if is_self then 
+		for i,pattern in patterns do
+			if text:find(pattern) then return false end
+		end
+		return true
 	end
     return true
 end, false)
@@ -403,5 +412,4 @@ end, false)
 -- [10. СТАРТОВАЯ ИНИЦИАЛИЗАЦИЯ РАНГА]
 -- ==========================================
 
-msg.New("Mint", "Auth", "You have successfully logged in", 5)
-msg.Mini("Sakura", "Auto-farm: Disabled", 0, function() changeActivity() end)
+msg.Mini("Wine", "Auto-farm: Disabled", 0, function() changeActivity() end)
