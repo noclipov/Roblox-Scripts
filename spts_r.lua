@@ -1,7 +1,6 @@
 -- ==========================================
 -- [1. ЗАГРУЗКА БИБЛИОТЕК И МОДУЛЕЙ]
 -- ==========================================
-local conv = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/main/Libs/convs.lua"))()
 local msg = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/main/Libs/notify.lua"))()
 local add = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/main/Libs/additional.lua"))()
 -- local websocket = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/main/Libs/websocket.lua"))()
@@ -353,9 +352,9 @@ local zones = {
 -- 		while true do
 -- 			pcall(function()
 -- 				ws:Send({
--- 					TPM = conv.ToLetters(LocalPlayer:GetAttribute("FinalTPM") or 0),
--- 					Psychic_Power = conv.ToLetters(LocalPlayer:GetAttribute("PsychicPower") or 0),
--- 					Body_Toughness = conv.ToLetters(LocalPlayer:GetAttribute("BodyToughness") or 0),
+-- 					TPM = add.ToLetters(LocalPlayer:GetAttribute("FinalTPM") or 0),
+-- 					Psychic_Power = add.ToLetters(LocalPlayer:GetAttribute("PsychicPower") or 0),
+-- 					Body_Toughness = add.ToLetters(LocalPlayer:GetAttribute("BodyToughness") or 0),
 -- 				})
 -- 			end)
 -- 		end
