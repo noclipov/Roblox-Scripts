@@ -4,13 +4,13 @@
 local msg = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/main/Libs/notify.lua"))()
 local add = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/main/Libs/additional.lua"))()
 -- local websocket = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/main/Libs/websocket.lua"))()
-local plm = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/main/Libs/playerlist.lua"))()
-local scanner = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/main/Libs/scanner.lua"))()
+-- local plm = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/main/Libs/playerlist.lua"))()
+-- local scanner = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/main/Libs/scanner.lua"))()
 
 -- local ws = websocket.new("ws://localhost:1337/luau", 15)
 -- ws:Start()
 add.afk()
-add.fpsc()
+add.fps()
 
 -- ==========================================
 -- [2. СЕРВИСЫ И КОНСТАНТЫ ROBLOX]
@@ -134,65 +134,65 @@ end
 -- ==========================================
 -- [6. ИНИЦИАЛИЗАЦИЯ ИНТЕРФЕЙСОВ (UI)]
 -- ==========================================
-scanner.Init({
-	Style = {
-		Accent = Color3.fromRGB(140, 100, 255), Highlight = Color3.fromRGB(180, 160, 255),
-		Bg = Color3.fromRGB(15, 15, 20), Text = Color3.fromRGB(255, 255, 255),
-		Success = Color3.fromRGB(100, 255, 100), Distance = 40, MaxUiVisibleDistance = 60,
-	},
-	LocalSetup = {
-		MaxUiVisibleDistance = 30,
-		Offsets = {
-			["RightUpperArm"] = Vector3.new(1.4, 0, 0),
-			["UpperTorso"] = Vector3.new(-1.4, 0.2, 0),
-			["Head"] = Vector3.new(1.3, 1.0, 0),
-		}
-	},
-	StatsConfig = {
-		["RightUpperArm"] = {Attr = "FistStrength", Name = "Fist Strength", Emoji = "🦾", Color = Color3.fromRGB(255, 80, 80), Offset = Vector3.new(3.5, 0, 0)},
-		["UpperTorso"] = {Attr = "BodyToughness", Name = "Body Toughness", Emoji = "🛡️", Color = Color3.fromRGB(80, 255, 150), Offset = Vector3.new(-3.5, 0.5, 0)},
-		["Head"] = {Attr = "PsychicPower", Name = "Psychic Power", Emoji = "🧠", Color = Color3.fromRGB(200, 100, 255), Offset = Vector3.new(3, 2, 0)},
-	},
-	Interactions = {
-		{Name = "Nick", Emoji = "👤", 
-			Callback = function(targetPlayer) copyToClipboard(targetPlayer.Name) end
-		},
-		{Name = "Squad", Emoji = "👥", 
-			Condition = function(targetPlayer)
-				local myGang = LocalPlayer:GetAttribute("Gang")
-				local targetGang = targetPlayer:GetAttribute("Gang")
-				return (myGang ~= "Not In A Clan") and myGang ~= targetGang
-			end,
-			Callback = function(targetPlayer) Events.GangRemotes.Invite:FireServer(targetPlayer.UserId) end
-		},
-	},
-})
+-- scanner.Init({
+-- 	Style = {
+-- 		Accent = Color3.fromRGB(140, 100, 255), Highlight = Color3.fromRGB(180, 160, 255),
+-- 		Bg = Color3.fromRGB(15, 15, 20), Text = Color3.fromRGB(255, 255, 255),
+-- 		Success = Color3.fromRGB(100, 255, 100), Distance = 40, MaxUiVisibleDistance = 60,
+-- 	},
+-- 	LocalSetup = {
+-- 		MaxUiVisibleDistance = 30,
+-- 		Offsets = {
+-- 			["RightUpperArm"] = Vector3.new(1.4, 0, 0),
+-- 			["UpperTorso"] = Vector3.new(-1.4, 0.2, 0),
+-- 			["Head"] = Vector3.new(1.3, 1.0, 0),
+-- 		}
+-- 	},
+-- 	StatsConfig = {
+-- 		["RightUpperArm"] = {Attr = "FistStrength", Name = "Fist Strength", Emoji = "🦾", Color = Color3.fromRGB(255, 80, 80), Offset = Vector3.new(3.5, 0, 0)},
+-- 		["UpperTorso"] = {Attr = "BodyToughness", Name = "Body Toughness", Emoji = "🛡️", Color = Color3.fromRGB(80, 255, 150), Offset = Vector3.new(-3.5, 0.5, 0)},
+-- 		["Head"] = {Attr = "PsychicPower", Name = "Psychic Power", Emoji = "🧠", Color = Color3.fromRGB(200, 100, 255), Offset = Vector3.new(3, 2, 0)},
+-- 	},
+-- 	Interactions = {
+-- 		{Name = "Nick", Emoji = "👤", 
+-- 			Callback = function(targetPlayer) copyToClipboard(targetPlayer.Name) end
+-- 		},
+-- 		{Name = "Squad", Emoji = "👥", 
+-- 			Condition = function(targetPlayer)
+-- 				local myGang = LocalPlayer:GetAttribute("Gang")
+-- 				local targetGang = targetPlayer:GetAttribute("Gang")
+-- 				return (myGang ~= "Not In A Clan") and myGang ~= targetGang
+-- 			end,
+-- 			Callback = function(targetPlayer) Events.GangRemotes.Invite:FireServer(targetPlayer.UserId) end
+-- 		},
+-- 	},
+-- })
 
-plm.Init({
-	{
-		Emoji = "👥",
-		Condition = function() local g = LocalPlayer:GetAttribute("Gang") return g and g ~= "" end,
-		Callback = function(targetPlayer)
-			Events.GangRemotes.Invite:FireServer(targetPlayer.UserId)
-			msg.Mini("Sky", "Приглашение отправлено игроку " .. targetPlayer.Name, 3)
-		end
-	},
-	{
-		Emoji = "💢",
-		Condition = function(targetPlayer)
-			return targetPlayer.Character and targetPlayer.Character:FindFirstChild("Humanoid") 
-				and targetPlayer.Character.Humanoid.Health > 0 
-				and (targetPlayer:GetAttribute("PsychicPower") or 0) * 100 <= (LocalPlayer:GetAttribute("PsychicPower") or 0)
-		end,
-		Callback = function(targetPlayer)
-			local char = targetPlayer.Character
-			if char and char:FindFirstChild("HumanoidRootPart") and not char:FindFirstChildOfClass("ForceField") then
-				Events.UseSkill:FireServer("HellFire", char)
-				msg.Mini("Wine", "Пытаемся сжечь " .. targetPlayer.Name, 3)
-			end
-		end
-	},
-}, "Left", Enum.KeyCode.Delete)
+-- plm.Init({
+-- 	{
+-- 		Emoji = "👥",
+-- 		Condition = function() local g = LocalPlayer:GetAttribute("Gang") return g and g ~= "" end,
+-- 		Callback = function(targetPlayer)
+-- 			Events.GangRemotes.Invite:FireServer(targetPlayer.UserId)
+-- 			msg.Mini("Sky", "Приглашение отправлено игроку " .. targetPlayer.Name, 3)
+-- 		end
+-- 	},
+-- 	{
+-- 		Emoji = "💢",
+-- 		Condition = function(targetPlayer)
+-- 			return targetPlayer.Character and targetPlayer.Character:FindFirstChild("Humanoid") 
+-- 				and targetPlayer.Character.Humanoid.Health > 0 
+-- 				and (targetPlayer:GetAttribute("PsychicPower") or 0) * 100 <= (LocalPlayer:GetAttribute("PsychicPower") or 0)
+-- 		end,
+-- 		Callback = function(targetPlayer)
+-- 			local char = targetPlayer.Character
+-- 			if char and char:FindFirstChild("HumanoidRootPart") and not char:FindFirstChildOfClass("ForceField") then
+-- 				Events.UseSkill:FireServer("HellFire", char)
+-- 				msg.Mini("Wine", "Пытаемся сжечь " .. targetPlayer.Name, 3)
+-- 			end
+-- 		end
+-- 	},
+-- }, "Left", Enum.KeyCode.Delete)
 
 -- ==========================================
 -- [7. УПРАВЛЕНИЕ ЖИЗНЕННЫМ ЦИКЛОМ ПЕРСОНАЖА]
