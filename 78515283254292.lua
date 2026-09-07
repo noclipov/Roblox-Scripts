@@ -2,10 +2,6 @@ local UserInputService = game:GetService("UserInputService")
 local add = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/main/Libs/additional.lua"))()
 local msg = add.module("notify.lua")
 msg.Mini("Purple", "Loading script...", 3)
-local function detected_anomaly(npc_name)
-    msg.Mini("Crimson", ("%s is an ANOMALY!"):format(npc_name), 10)
-    fireproximityprompt(workspace.Misc.ShutterButton.PP)
-end
 local function base_check_in(window_number, return_object)
 	window_number = window_number or 1
 	return_object = return_object or false
@@ -19,20 +15,17 @@ local function base_check_in(window_number, return_object)
 end
 local function check_in(window_number)
     window_number = window_number or 1
-    base_check_in(window_number)
-    task.wait(0.5)
-    fireproximityprompt(workspace.Misc.CheckIn.Computer.PP)
-    task.wait(0.1)
-    fireproximityprompt(workspace.Misc.CheckIn.Printer.PP)
-    task.wait(0.6)
-    local badge = base_check_in(nil, true):WaitForChild("PrintedBadge")
+    base_check_in(window_number); task.wait(0.5)
+    fireproximityprompt(workspace.Misc.CheckIn.Computer.PP); task.wait(0.1)
+    fireproximityprompt(workspace.Misc.CheckIn.Printer.PP); task.wait(0.6)
+    local badge = base_check_in(window_number, true):WaitForChild("PrintedBadge")
     repeat task.wait() until badge.PP.Enabled
-    local name = base_check_in(nil, true).PrintedBadge.Tag.UI.Label.Text
+    local name = base_check_in(window_number, true):WaitForChild("PrintedBadge").Tag.UI.Label.Text
     if workspace.NPCs[name]:GetAttribute("Skinwalker") then
-        detected_anomaly(name)
+		msg.Mini("Crimson", ("%s (#%s) is an ANOMALY!"):format(name, window_number), 10)
         return
     end
-    fireproximityprompt(workspace.Misc.CheckIn:WaitForChild("PrintedBadge"):WaitForChild("PP"))
+    fireproximityprompt(base_check_in(window_number, true).PrintedBadge:WaitForChild("PP"))
     task.wait(0.1)
     fireproximityprompt(workspace.NPCs[name].PP)
 end
