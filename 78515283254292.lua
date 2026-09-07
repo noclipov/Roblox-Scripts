@@ -1,7 +1,6 @@
 local UserInputService = game:GetService("UserInputService")
 local add = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/main/Libs/additional.lua"))()
 local msg = add.module("notify.lua")
-msg.Mini("Purple", "Loading script...", 3)
 local function base_check_in(window_number, return_object)
 	window_number = window_number or 1
 	return_object = return_object or false
