@@ -33,12 +33,12 @@ local UserInputService = game:GetService("UserInputService")
 local lp = game.Players.LocalPlayer
 local hum = lp.Character and lp.Character.Humanoid or lp.CharacterAdded:Wait() and lp.Character.Humanoid
 local function setup_bhop(humanoid)
-    hum.StateChanged:Connect(function(_, newState)
+    humanoid.StateChanged:Connect(function(_, newState)
         if newState == Enum.HumanoidStateType.Landed and IsHoldingJump then
-            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
         end
     end)
-    msg.Mini("Mint", "Enabled aut0-bhop.", 5)
+    msg.New("Sakura", "BunnyHop","Successfully enabled!", 5)
 end
 setup_bhop(hum)
 local IsHoldingJump = false
