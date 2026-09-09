@@ -32,28 +32,28 @@ local msg = add.module("notify.lua")
 local UserInputService = game:GetService("UserInputService")
 local lp = game.Players.LocalPlayer
 local hum = lp.Character and lp.Character.Humanoid or lp.CharacterAdded:Wait() and lp.Character.Humanoid
+local IsHoldingJump = false
 local function setup_bhop(humanoid)
     humanoid.StateChanged:Connect(function(_, newState)
         if newState == Enum.HumanoidStateType.Landed and IsHoldingJump then
             humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
         end
     end)
-    msg.New("Sakura", "BunnyHop","Successfully enabled!", 5)
+    msg.New("Purple", "Noclipov scripts","AutoBHOP has been successfully enabled!", 5)
 end
 setup_bhop(hum)
-local IsHoldingJump = false
 lp.CharacterAdded:Connect(function(char)
     local hum = char:WaitForChild("Humanoid")
     setup_bhop(hum)
 end)
 UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
-    if input.KeyCode == Enum.KeyCode.Space or input.UserInputType == Enum.UserInputType.Jump then
+    if input.KeyCode == Enum.KeyCode.Space then
         IsHoldingJump = true
     end
 end)
 UserInputService.InputEnded:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.Space or input.UserInputType == Enum.UserInputType.Jump then
+    if input.KeyCode == Enum.KeyCode.Space then
         IsHoldingJump = false
     end
 end)
