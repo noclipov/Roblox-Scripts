@@ -501,8 +501,22 @@ local function CreateButton(page, text, callback)
 end
 
 -- Tabs -----------------------------------------------------------------
-local PlayerTab   = CreateTab("Player")
-local AutoTab     = CreateTab("Automation")
+local PlayerTab   = CreateTab("Main")
+
+local function TriggerSelfRevive()
+    local events = GetEvents()
+    if not events then return end
+    local revive = events:FindFirstChild("Revive")
+    if revive then revive:FireServer() end
+    local setMode = events:FindFirstChild("SetPlayerMode")
+    if setMode then setMode:FireServer(true) end
+    local charEvents = events:FindFirstChild("Character")
+    if charEvents and charEvents:FindFirstChild("Revive") then
+        charEvents.Revive:FireServer()
+    end
+end
+
+CreateButton(PlayerTab, "Instant Revive Self", TriggerSelfRevive)
 
 -- Bhop -----------------------------------------------------------------
 CreateToggle(PlayerTab, "Auto BunnyHop (Hold Jump)", State.BhopEnabled, function(v)
@@ -511,15 +525,18 @@ end)
 
 -- Slope Boost ----------------------------------------------------------
 local SLOPE = {
-    Cooldown     = 0.25,   -- пауза между бустами
-    MinSpeed     = 50,     -- минимальная горизонтальная скорость игрока
-    Gain         = 1.3,    -- множитель силы импульса
-    UpComponent  = 1.4,    -- вертикальная составляющая импульса
-    MinRise      = 0.8,    -- главный порог: минимальный подъём (stud) на 2.5 стада
-    NormalMin    = 0.78,   -- ниже — почти стена, буст не срабатывает
-    NormalMax    = 0.98,   -- выше — почти ровная дорога, буст не срабатывает
-    AirRay       = 12,     -- длина рейка вниз, пока в воздухе
-    GroundRay    = 8,      -- длина рейка вниз для низких прыжков
+    Cooldown        = 0.25,
+    MinSpeed        = 20,
+    Gain            = 1.4,    -- базовый множитель импульса
+    GainPerSpeed    = 0.012,  -- прибавка к Gain за каждую stud/s скорости
+    MaxGain         = 3.2,    -- верхняя граница Gain (чтобы не улетать в космос)
+    SpeedRef        = 60,     -- скорость, от которой считаем "быстрый" игрок
+    UpComponent     = 2,
+    MinRise         = 1,
+    NormalMin       = 0.60,
+    NormalMax       = 0.98,
+    AirRay          = 12,
+    GroundRay       = 8,
 }
 local LastSlopeBoost = 0
 local DOWN_AIR    = Vector3.new(0, -SLOPE.AirRay, 0)
@@ -529,7 +546,7 @@ local SlopeRayParams = RaycastParams.new()
 SlopeRayParams.FilterType = Enum.RaycastFilterType.Exclude
 SlopeRayParams.IgnoreWater = true
 SlopeRayParams.RespectCanCollide = true  -- игнорировать парты с CanCollide = false
-SlopeRayParams.FilterDescendantsInstances = { LocalPlayer.Character }
+SlopeRayParams.FilterDescendantsInstances = { LocalPlayer.Character, workspace.Map.Parts.ImmovableProps }
 
 local function RefreshSlopeFilter()
     local filter = {}
@@ -612,16 +629,32 @@ local function TrySlopeBoost()
     if upDot >= SLOPE.NormalMax or upDot <= SLOPE.NormalMin then return end
 
     LastSlopeBoost = now
+
+    -- Чем быстрее игрок — тем сильнее импульс.
+    local speedOverRef = math.max(0, speed - SLOPE.SpeedRef)
+    local effectiveGain = SLOPE.Gain + speedOverRef * SLOPE.GainPerSpeed
+    effectiveGain = math.min(effectiveGain, SLOPE.MaxGain)
+
     task.spawn(function()
         task.wait(0.03)
         if not State.SlopeBoostEnabled then return end
-        -- Проверяем, что пробел всё ещё зажат и персонаж ещё жив/в воздухе
         if not State.IsHoldingJump then return end
         if not hrp.Parent then return end
         local v2 = hrp.AssemblyLinearVelocity
         if v2.Y < 0 then return end
-        hrp.AssemblyLinearVelocity = (fw + Vector3.new(0, SLOPE.UpComponent, 0)).Unit
-            * math.max(speed, SLOPE.MinSpeed) * SLOPE.Gain
+
+        -- Скорость могла измениться за 0.03 сек — пересчитываем усилитель
+        local currentSpeed = Vector3.new(v2.X, 0, v2.Z).Magnitude
+        local curOverRef = math.max(0, currentSpeed - SLOPE.SpeedRef)
+        local curGain = math.min(
+            SLOPE.Gain + curOverRef * SLOPE.GainPerSpeed,
+            SLOPE.MaxGain
+        )
+
+        hrp.AssemblyLinearVelocity =
+            (fw + Vector3.new(0, SLOPE.UpComponent, 0)).Unit
+            * math.max(currentSpeed, SLOPE.MinSpeed)
+            * curGain
     end)
 end
 
@@ -631,279 +664,6 @@ CreateToggle(PlayerTab, "Slope / Stair Boost (Air)", State.SlopeBoostEnabled, fu
 end)
 
 Connections.SlopeBoostLoop = RunService.Heartbeat:Connect(TrySlopeBoost)
-
--- -- Strafe Assistant (усиление игрового LinearVelocity) -----------------
--- local STRAFE = {
---     Gain     = 60,    -- прибавка к целевой скорости, stud/s²
---     MaxSpeed = 130,   -- потолок целевой скорости
---     AirOnly  = true,
--- }
-
--- -- Записи об оригинальных значениях LinearVelocity
--- local LVRecords = {}   -- [hrp] = { {lv = obj, originalVec = Vector3, originalForce = number} }
-
--- local function SnapshotLV(hrp)
---     if LVRecords[hrp] then return end
---     local records = {}
---     for _, obj in ipairs(hrp:GetChildren()) do
---         if obj:IsA("LinearVelocity") then
---             table.insert(records, {
---                 lv            = obj,
---                 originalVec   = obj.VectorVelocity,
---                 originalForce = obj.MaxForce,
---             })
---         end
---     end
---     if #records > 0 then LVRecords[hrp] = records end
--- end
-
--- local function BoostLV(hrp, dir, targetSpeed)
---     local records = LVRecords[hrp]
---     if not records then return end
---     for _, r in ipairs(records) do
---         if r.lv and r.lv.Parent then
---             local horiz = Vector3.new(r.originalVec.X, 0, r.originalVec.Z)
---             -- Сохраняем исходное направление (если есть), иначе берём направление игрока
---             local baseDir = horiz.Magnitude > 0.1 and horiz.Unit or dir
---             r.lv.Enabled = true
---             r.lv.VectorVelocity = Vector3.new(
---                 baseDir.X * targetSpeed,
---                 r.originalVec.Y,
---                 baseDir.Z * targetSpeed
---             )
---         end
---     end
--- end
-
--- local function RestoreLV(hrp)
---     local records = LVRecords[hrp]
---     if not records then return end
---     for _, r in ipairs(records) do
---         if r.lv and r.lv.Parent then
---             pcall(function()
---                 r.lv.VectorVelocity = r.originalVec
---                 r.lv.MaxForce = r.originalForce
---             end)
---         end
---     end
---     LVRecords[hrp] = nil
--- end
-
--- local function RestoreAllLV()
---     for hrp in pairs(LVRecords) do RestoreLV(hrp) end
--- end
-
--- -- Тоггл ---------------------------------------------------------------
--- CreateToggle(PlayerTab, "Strafe Assistant", State.StrafeEnabled, function(v)
---     State.StrafeEnabled = v
---     if not v then RestoreAllLV() end
--- end)
-
--- -- Логика --------------------------------------------------------------
--- local lastHrp = nil
--- local StrafeSignal = RunService.PreSimulation or RunService.Stepped
-
--- Connections.StrafeLoop = StrafeSignal:Connect(function(_, dt)
---     if not State.StrafeEnabled then
---         if lastHrp then RestoreLV(lastHrp) end
---         return
---     end
---     if type(dt) ~= "number" or dt <= 0 then dt = 1/60 end
-
---     local char = LocalPlayer.Character
---     if not char then return end
---     local hrp = char:FindFirstChild("HumanoidRootPart")
---     local hum = char:FindFirstChildOfClass("Humanoid")
---     if not hrp or not hum then
---         if lastHrp then RestoreLV(lastHrp) end
---         return
---     end
-
---     if lastHrp and lastHrp ~= hrp then RestoreLV(lastHrp) end
---     lastHrp = hrp
-
---     local inAir
---     if STRAFE.AirOnly then
---         local st = hum:GetState()
---         inAir = (st == Enum.HumanoidStateType.Freefall
---               or st == Enum.HumanoidStateType.Jumping)
---     else
---         inAir = true
---     end
-
---     if not inAir then
---         RestoreLV(hrp)
---         return
---     end
-
---     local vel = hrp.AssemblyLinearVelocity
---     local flat = Vector3.new(vel.X, 0, vel.Z)
---     local speed = flat.Magnitude
-
---     -- Некуда ускорять, или уже на потолке
---     if speed < 1 or speed >= STRAFE.MaxSpeed then
---         -- Не восстанавливаем LV — пусть держит текущую скорость,
---         -- чтобы игрок не терял разгон, когда отпустил W в воздухе.
---         if speed < 1 then RestoreLV(hrp) end
---         return
---     end
-
---     SnapshotLV(hrp)
-
---     local dir = flat.Unit
---     local targetSpeed = math.min(speed + STRAFE.Gain * dt, STRAFE.MaxSpeed)
-
---     BoostLV(hrp, dir, targetSpeed)
--- end)
-
--- -- Base Speed Boost ----------------------------------------------------
--- local SPEED = {
---     WalkSpeed      = 42,
---     JumpPower      = 60,
---     ApplyJumpPower = false,
--- }
-
--- local function ApplyBaseSpeed(char)
---     if not char or not State.SpeedBoostEnabled then return end
---     local hum = char:FindFirstChildOfClass("Humanoid")
---     if not hum then return end
---     if hum.WalkSpeed ~= SPEED.WalkSpeed then
---         hum.WalkSpeed = SPEED.WalkSpeed
---     end
---     if SPEED.ApplyJumpPower then
---         if not hum.UseJumpPower then hum.UseJumpPower = true end
---         if hum.JumpPower ~= SPEED.JumpPower then
---             hum.JumpPower = SPEED.JumpPower
---         end
---     end
--- end
-
--- local function RestoreBaseSpeed(char)
---     if not char then return end
---     local hum = char:FindFirstChildOfClass("Humanoid")
---     if not hum then return end
---     hum.WalkSpeed = 16
---     if SPEED.ApplyJumpPower then
---         hum.UseJumpPower = true
---         hum.JumpPower = 50
---     end
--- end
-
--- CreateToggle(PlayerTab, "Base Speed Boost", State.SpeedBoostEnabled, function(v)
---     State.SpeedBoostEnabled = v
---     if v then
---         ApplyBaseSpeed(LocalPlayer.Character)
---     else
---         RestoreBaseSpeed(LocalPlayer.Character)
---     end
--- end)
-
--- -- Keep-loop: не даём игре откатить WalkSpeed
--- Connections.SpeedKeepLoop = RunService.Heartbeat:Connect(function()
---     if not State.SpeedBoostEnabled then return end
---     ApplyBaseSpeed(LocalPlayer.Character)
--- end)
-
--- Connections.SpeedBoostCharacterAdded = LocalPlayer.CharacterAdded:Connect(function(char)
---     task.wait(0.1)
---     if State.SpeedBoostEnabled then ApplyBaseSpeed(char) end
--- end)
-
--- Revive ---------------------------------------------------------------
-local function TriggerSelfRevive()
-    local events = GetEvents()
-    if not events then return end
-    local revive = events:FindFirstChild("Revive")
-    if revive then revive:FireServer() end
-    local setMode = events:FindFirstChild("SetPlayerMode")
-    if setMode then setMode:FireServer(true) end
-    local charEvents = events:FindFirstChild("Character")
-    if charEvents and charEvents:FindFirstChild("Revive") then
-        charEvents.Revive:FireServer()
-    end
-end
-
-CreateButton(AutoTab, "Instant Revive Self", TriggerSelfRevive)
-
-CreateToggle(AutoTab, "Auto Revive Self (When Downed)", State.AutoReviveEnabled, function(v)
-    State.AutoReviveEnabled = v
-end)
-
-local lastSelfRevive = 0
-Connections.AutoSelfReviveLoop = RunService.Heartbeat:Connect(function()
-    if not State.AutoReviveEnabled then return end
-    local char = LocalPlayer.Character
-    if not char then return end
-    if not (char:GetAttribute("Downed") or char:FindFirstChild("Downed")) then return end
-    local now = os.clock()
-    if now - lastSelfRevive < 3 then return end
-    lastSelfRevive = now
-    TriggerSelfRevive()
-end)
-
--- Touch Revive ---------------------------------------------------------
-local TouchDebounce = {}
-local TOUCH_COOLDOWN = 0.5
-
-local function IsCharacterDowned(char)
-    if not char then return false end
-    return char:GetAttribute("Downed") or char:FindFirstChild("Downed") ~= nil
-end
-
-local function TryReviveTouched(hit)
-    if not State.AutoReviveOthers or not hit or not hit.Parent then return end
-    local targetChar = hit:FindFirstAncestorOfClass("Model")
-    if not targetChar or targetChar == LocalPlayer.Character then return end
-    if not targetChar:FindFirstChild("HumanoidRootPart") then return end
-    if not IsCharacterDowned(targetChar) then return end
-
-    local now = os.clock()
-    if TouchDebounce[targetChar] and now - TouchDebounce[targetChar] < TOUCH_COOLDOWN then return end
-    TouchDebounce[targetChar] = now
-
-    local events = GetEvents()
-    local interact = events and events:FindFirstChild("Interact")
-    if interact then
-        pcall(function()
-            interact:FireServer("Revive", targetChar:GetAttribute("Tag"))
-        end)
-    end
-end
-
-local function HookTouchRevive(character)
-    if Connections.TouchReviveCleanup then
-        Connections.TouchReviveCleanup()
-        Connections.TouchReviveCleanup = nil
-    end
-    if not character then return end
-
-    local conns = {}
-    local function hookPart(part)
-        if part:IsA("BasePart") then
-            table.insert(conns, part.Touched:Connect(TryReviveTouched))
-        end
-    end
-    for _, d in ipairs(character:GetDescendants()) do hookPart(d) end
-    table.insert(conns, character.DescendantAdded:Connect(hookPart))
-
-    Connections.TouchReviveCleanup = function()
-        for _, c in ipairs(conns) do
-            if c.Connected then pcall(function() c:Disconnect() end) end
-        end
-        table.clear(conns)
-        table.clear(TouchDebounce)
-    end
-end
-
-CreateToggle(AutoTab, "Auto Revive Teammates (Touch)", State.AutoReviveOthers, function(v)
-    State.AutoReviveOthers = v
-    if not v and Connections.TouchReviveCleanup then
-        Connections.TouchReviveCleanup()
-        Connections.TouchReviveCleanup = nil
-    elseif v and LocalPlayer.Character then
-        HookTouchRevive(LocalPlayer.Character)
-    end
-end)
 
 -- Character / Jump hooks ----------------------------------------------
 local function HookBhop(character)
