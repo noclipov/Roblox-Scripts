@@ -7,13 +7,13 @@ if not ALLOWED_PLACE_IDS[game.PlaceId] then
 end
 
 -- Services ---------------------------------------------------------------
-local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService  = game:GetService("UserInputService")
 local RunService        = game:GetService("RunService")
 local TweenService      = game:GetService("TweenService")
 local CoreGui           = game:GetService("CoreGui")
 local Workspace         = game:GetService("Workspace")
+local Players           = game:GetService("Players")
 local LocalPlayer       = Players.LocalPlayer
 local ENV               = (getgenv and getgenv()) or _G
 
@@ -517,7 +517,6 @@ local function TriggerSelfRevive()
 end
 
 CreateButton(PlayerTab, "Instant Revive Self", TriggerSelfRevive)
-
 -- Bhop -----------------------------------------------------------------
 CreateToggle(PlayerTab, "Auto BunnyHop (Hold Jump)", State.BhopEnabled, function(v)
     State.BhopEnabled = v
@@ -529,13 +528,13 @@ local SLOPE = {
     MinSpeed        = 20,
     Gain            = 1.4,    -- базовый множитель импульса
     GainPerSpeed    = 0.025,  -- прибавка к Gain за каждую stud/s скорости
-    MaxGain         = 4,    -- верхняя граница Gain (чтобы не улетать в космос)
+    MaxGain         = 3.5,    -- верхняя граница Gain (чтобы не улетать в космос)
     SpeedRef        = 50,     -- скорость, от которой считаем "быстрый" игрок
     UpComponent     = 2,
-    MinRise         = 1.3,
+    MinRise         = 1.13,
     NormalMin       = 0.60,
     NormalMax       = 0.98,
-    AirRay          = 12,
+    AirRay          = 18,
     GroundRay       = 8,
 }
 local LastSlopeBoost = 0
