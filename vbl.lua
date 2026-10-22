@@ -1,7 +1,8 @@
 while not game.IsLoaded do task.wait() end
 local pls = game.Players
 local lp = pls.LocalPlayer
-while not lp do task.wait() lp = game.Players.LocalPlayer end
+while not lp do task.wait(); lp = game.Players.LocalPlayer end
+repeat task.wait() until lp:GetAttribute("User_DataLoaded")
 local char = lp.Character or lp.CharacterAdded:Wait() and lp.Character
 local mypp = char.PrimaryPart
 lp.CharacterAdded:Connect(function(character)
@@ -12,8 +13,8 @@ local function getping() return lp:GetNetworkPing()*2000 end
 local CurCam = workspace.CurrentCamera
 task.wait(1)
 local add = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/main/Libs/additional.lua"))()
-local msg = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/main/Libs/notify.lua"))()
-local vinp = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/main/Libs/input.lua"))()
+local msg = add.module('notify.lua')
+local vinp = add.module('input.lua')
 -- loadstring(readfile('noclipov/watermark.lua'))()
 add.module('timer.lua').new("Clock")
 local PlayerModule = lp.PlayerScripts:WaitForChild("PlayerModule")
@@ -36,18 +37,16 @@ local VOLLEYBALL_IDS = {
 }
 -- setclipboard(string.format("game:GetService('TeleportService'):TeleportToPlaceInstance(%s, '%s', game.Players.LocalPlayer)", tostring(game.PlaceId), game.JobId))
 if VOLLEYBALL_IDS[tostring(game.PlaceId)] then
-    while not lp:GetAttribute("User_Level") do task.wait() end
+	msg.Mini("Mint", "Started loading...", 3)
+    -- while not lp:GetAttribute("User_Level") do task.wait() end
     task.wait(0.5)
     game.StarterGui:SetCore("ChatActive", false)
     -- Variables
-    local Styles = RP.Content.Style
-    local Abilities = RP.Content.Ability
-    local Rarities = require(RP.Configuration.Rarity)
     local closest = {nil, 1e99}
     local antishiftlock, superhitbox, targethl, setter_mode, spike_hack, ball, current_style, current_ability, powerpreset
     local knitServices = RP:WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_knit@1.7.0"):WaitForChild("knit"):WaitForChild("Services")
     local services = {
-		toggle_advs = knitServices.GameService.RF.ToggleAdvancedMoves,
+		change_settings = knitServices.SettingsService.RF.ChangeSetting,
 		jersey = knitServices.JerseyService.RF.RequestJerseyUpdate,
 		-- Hooks
 		serve = knitServices.GameService.RF.Serve,
@@ -90,7 +89,7 @@ if VOLLEYBALL_IDS[tostring(game.PlaceId)] then
     -- Functions
     local function getlvl() return tonumber(lp:GetAttribute("User_Level")) end
     local function ingame() return lp:GetAttribute("Gameplay_InGame") end
-    local function enableadvmoves() local text = pgui:WaitForChild("Interface"):WaitForChild("TeamSelection"):WaitForChild("Options"):WaitForChild("AdvancedMoves"):WaitForChild("Text"); if text.Text:find("OFF") then services.toggle_advs:InvokeServer() end end
+    local function enableadvmoves() services.change_settings:InvokeServer({"AdvancedMoves_Enabled", true}) end
     local function getball()
         for i,v in pairs(workspace:GetChildren()) do
             if v.Name:find("CLIENT_BALL") then return v end
@@ -221,6 +220,8 @@ if VOLLEYBALL_IDS[tostring(game.PlaceId)] then
             current_style = get_style()
         elseif attr == "Gameplay_Ability" then
             current_ability = lp:GetAttribute("Gameplay_Ability")
+		elseif attr == "User_Level" then
+			enableadvmoves()
         end
     end)
     -- Binds
@@ -268,6 +269,7 @@ if VOLLEYBALL_IDS[tostring(game.PlaceId)] then
             end
         end
     end)
+	msg.Mini("Mint", "Keybinds registered.", 3)
     -- Chat Commands
     lp.Chatted:Connect(function(message, target)
         if target then return end
@@ -275,6 +277,7 @@ if VOLLEYBALL_IDS[tostring(game.PlaceId)] then
         else game.StarterGui:SetCore("ChatActive", false)
         end
     end)
+	msg.Mini("Mint", "Chat commands registered.", 3)
     -- hookmetamethod
     task.spawn(function()
         if hookmetamethod then
@@ -286,7 +289,7 @@ if VOLLEYBALL_IDS[tostring(game.PlaceId)] then
                     superhitbox = false
                     local move = args[1]["Move"]
                     return hook_handler(self, {
-                            ["Charge"] = move == "Bump" and 0 or 1,
+                            ["Charge"] = move == "Bump" and 0 or 0.5,
                             ["Move"] = move,
                             ["SpecialCharge"] = 0,
                             ["TiltDirection"] = Vector3.yAxis,
@@ -302,7 +305,7 @@ if VOLLEYBALL_IDS[tostring(game.PlaceId)] then
                     local move = args[1]["Move"]
                     return hook_handler(self, {
                         ["BallId"] = args[1]["BallId"],
-                        ["Charge"] = move == "Bump" and 0 or 0.6,
+                        ["Charge"] = move == "Bump" and 0 or 0.5,
                         ["Key"] = args[1]["Key"],
                         ["ClientTimestamp"] = args[1]["ClientTimestamp"],
                         ["Move"] = move
@@ -390,7 +393,7 @@ if VOLLEYBALL_IDS[tostring(game.PlaceId)] then
             end
         end
     end)
-    -- Loop #2 (Players' lines)
+    -- Loop #2 (Highlight players)
     task.spawn(function()
         while game:GetService("RunService").RenderStepped:Wait() do
             for i,v in pairs(pls:GetChildren()) do
@@ -412,7 +415,7 @@ if VOLLEYBALL_IDS[tostring(game.PlaceId)] then
             if waitinglvl5 then
                 if getlvl()>=5 then
                     local str = pgui:FindFirstChild("Interface").TeamSelection.Options.AdvancedMoves.Text.Text
-                    if str:find("OFF") then services.GameService.RF.ToggleAdvancedMoves:InvokeServer() end
+                    if str:find("OFF") then services.toggle_advs:InvokeServer() end
                     -- services.teleport:InvokeServer("Default")
                     waitinglvl5=false
                 end
@@ -448,5 +451,5 @@ if VOLLEYBALL_IDS[tostring(game.PlaceId)] then
             end
         end
     end)
+	msg.Mini("Mint", "Color correction completed.", 3)
 end
-msg.Mini("Mint", "VBL запущен.", 3)
