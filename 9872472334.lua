@@ -93,10 +93,12 @@ local CFG = {
 -- ================= EXTERNAL SHADERS =================
 local Shaders = nil
 do
-	local addOrErr = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/refs/heads/main/Libs/additional.lua"))()
-    if type(addOrErr) == "table" and type(addOrErr.load_module) == "function" then
-        local ok2, mod = pcall(function() return addOrErr.load_module("shaders.lua") end)
-		print(type(ok2), type(mod))
+    local ok, addOrErr = pcall(function()
+        local f = loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/refs/heads/main/Libs/additional.lua"))
+        return f and f()
+    end)
+    if ok and type(addOrErr) == "table" and type(addOrErr.load_module) == "function" then
+        local ok2, mod = pcall(function() return addOrErr.load_module("shaders.lua", true) end)
         if ok2 and type(mod) == "table" then
             Shaders = mod
         end
