@@ -124,26 +124,27 @@ do
 end
 
 -- ================= THEME — CRIMSON =================
+-- ================= THEME — SOFT CRIMSON =================
 local Theme = {
-    BgDarkest    = Color3.fromRGB(10, 8, 10),
-    BgMain       = Color3.fromRGB(16, 12, 14),
-    BgSidebar    = Color3.fromRGB(12, 9, 11),
-    SurfaceBase  = Color3.fromRGB(28, 22, 26),
-    SurfaceLight = Color3.fromRGB(38, 30, 34),
-    SurfaceHover = Color3.fromRGB(48, 36, 42),
-    Accent       = Color3.fromRGB(220, 38, 38),
-    AccentHover  = Color3.fromRGB(248, 80, 80),
-    AccentDark   = Color3.fromRGB(120, 18, 18),
-    AccentSoft   = Color3.fromRGB(255, 120, 120),
+    BgDarkest    = Color3.fromRGB(18, 16, 20),
+    BgMain       = Color3.fromRGB(26, 22, 28),
+    BgSidebar    = Color3.fromRGB(22, 18, 24),
+    SurfaceBase  = Color3.fromRGB(36, 32, 40),
+    SurfaceLight = Color3.fromRGB(46, 40, 50),
+    SurfaceHover = Color3.fromRGB(56, 48, 60),
+    Accent       = Color3.fromRGB(190, 70, 70),
+    AccentHover  = Color3.fromRGB(215, 85, 85),
+    AccentDark   = Color3.fromRGB(110, 35, 35),
+    AccentSoft   = Color3.fromRGB(235, 130, 130),
     Success      = Color3.fromRGB(80, 200, 120),
-    Danger       = Color3.fromRGB(255, 120, 60),
-    Warning      = Color3.fromRGB(255, 200, 60),
-    Text         = Color3.fromRGB(245, 240, 242),
-    TextBright   = Color3.fromRGB(255, 255, 255),
-    TextDim      = Color3.fromRGB(175, 162, 168),
-    TextMuted    = Color3.fromRGB(120, 108, 114),
-    Border       = Color3.fromRGB(52, 40, 46),
-    BorderLight  = Color3.fromRGB(78, 58, 66),
+    Danger       = Color3.fromRGB(255, 110, 110),
+    Warning      = Color3.fromRGB(255, 190, 60),
+    Text         = Color3.fromRGB(225, 220, 228),
+    TextBright   = Color3.fromRGB(250, 250, 250),
+    TextDim      = Color3.fromRGB(160, 155, 165),
+    TextMuted    = Color3.fromRGB(120, 115, 125),
+    Border       = Color3.fromRGB(55, 48, 58),
+    BorderLight  = Color3.fromRGB(80, 70, 85),
 }
 local SEQ_SWITCH_OFF = ColorSequence.new(Theme.SurfaceBase, Theme.BgDarkest)
 local SEQ_SWITCH_ON  = ColorSequence.new(Theme.AccentSoft, Theme.AccentDark)
@@ -1829,19 +1830,29 @@ local function MakeSwitch(parent, default, cb, opts)
     Corner(knob, math.floor(knobSize / 2))
     Gradient(knob, { Color3.fromRGB(255,255,255), Color3.fromRGB(220,225,235) }, 90)
     AddShadow(knob, { transparency = 0.6, blur = 8, offset = Vector2.new(0, 2) })
-    local function set(val)
+    
+    local function set(val, isSilent)
         toggled = val
-        Tween(sw, { BackgroundColor3 = toggled and Theme.AccentDark or Theme.SurfaceBase }, 0.24)
-        Tween(knob, { Position = toggled and knobPosOn or knobPosOff }, 0.34,
-            Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-        Tween(swStroke, {
-            Color = toggled and Theme.AccentSoft or Theme.Border,
-            Transparency = toggled and 0.4 or 0.8,
-        }, 0.22)
-        swGradient.Color = toggled and SEQ_SWITCH_ON or SEQ_SWITCH_OFF
+        local bgColor = toggled and Theme.AccentDark or Theme.SurfaceBase
+        local strokeColor = toggled and Theme.AccentSoft or Theme.Border
+        local strokeTrans = toggled and 0.4 or 0.8
+        local targetPos = toggled and knobPosOn or knobPosOff
+
+        if isSilent then
+            sw.BackgroundColor3 = bgColor
+            knob.Position = targetPos
+            swStroke.Color = strokeColor
+            swStroke.Transparency = strokeTrans
+            swGradient.Color = toggled and SEQ_SWITCH_ON or SEQ_SWITCH_OFF
+        else
+            Tween(sw, { BackgroundColor3 = bgColor }, 0.24)
+            Tween(knob, { Position = targetPos }, 0.34, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+            Tween(swStroke, { Color = strokeColor, Transparency = strokeTrans }, 0.22)
+            swGradient.Color = toggled and SEQ_SWITCH_ON or SEQ_SWITCH_OFF
+        end
         if cb then cb(toggled) end
     end
-    sw.MouseButton1Click:Connect(function() set(not toggled); if SaveConfig then SaveConfig() end end)
+    sw.MouseButton1Click:Connect(function() set(not toggled, false); if SaveConfig then SaveConfig() end end)
     return set
 end
 local function MakeSlider(parent, min, max, default, cb, opts)
@@ -1851,6 +1862,7 @@ local function MakeSlider(parent, min, max, default, cb, opts)
     local pillW = opts.pillWidth or 58
     local snaps = opts.snaps or {}
     local snapRadiusPx = opts.snapRadius or 5
+    local currentV = default
 
     local pill = MakeFrame(parent, {
         Size=UDim2.new(0, pillW, 0, 22),
@@ -1898,6 +1910,7 @@ local function MakeSlider(parent, min, max, default, cb, opts)
             table.insert(snapMarkers, {value = sv, pct = pct, frame = dot})
         end
     end
+    
     local function applySnap(rawV)
         if #snapMarkers == 0 then return rawV end
         local trackPx = track.AbsoluteSize.X
@@ -1911,17 +1924,20 @@ local function MakeSlider(parent, min, max, default, cb, opts)
         end
         return bestDelta <= tolerance and bestV or rawV
     end
-    local function refreshSnapMarkerHighlight(currentV)
+    
+    local function refreshSnapMarkerHighlight(currentVal)
         for _, sm in ipairs(snapMarkers) do
-            local near = math.abs(currentV - sm.value) < 0.0001
+            local near = math.abs(currentVal - sm.value) < 0.0001
             sm.frame.BackgroundColor3 = near and Theme.Accent or Theme.TextMuted
             sm.frame.BackgroundTransparency = near and 0 or 0.4
             sm.frame.Size = near and UDim2.new(0, 7, 0, 7) or UDim2.new(0, 5, 0, 5)
         end
     end
+    
     local function updateUI(v, applyMagnet)
         v = math.clamp(v, min, max)
-        if applyMagnet ~= false then v = applySnap(v) end
+        if applyMagnet then v = applySnap(v) end
+        currentV = v
         v = math.floor(v * mult + 0.5) / mult
         local pct = (v - min) / (max - min)
         fill.Size = UDim2.new(pct, 0, 1, 0)
@@ -1930,41 +1946,38 @@ local function MakeSlider(parent, min, max, default, cb, opts)
         refreshSnapMarkerHighlight(v)
         if cb then cb(v) end
     end
-    local function handleInput(input)
-        local raw = min + (max - min) * (math.clamp(
-            input.Position.X - track.AbsolutePosition.X, 0, track.AbsoluteSize.X
-        ) / track.AbsoluteSize.X)
-        updateUI(raw, true)
-    end
+    
     track.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
-            handleInput(input)
+            local raw = min + (max - min) * (math.clamp(
+                input.Position.X - track.AbsolutePosition.X, 0, track.AbsoluteSize.X
+            ) / track.AbsoluteSize.X)
+            
+            -- Клик по треку - применяем магнит сразу
+            updateUI(raw, true)
+            
             Tween(knob, { Size = UDim2.new(0, 20, 0, 20) }, 0.12)
             if opts.onDragStart then opts.onDragStart() end
+            
             SetInteraction({
-                onMove = handleInput,
+                onMove = function(inp)
+                    local rawMove = min + (max - min) * (math.clamp(
+                        inp.Position.X - track.AbsolutePosition.X, 0, track.AbsoluteSize.X
+                    ) / track.AbsoluteSize.X)
+                    -- При перетаскивании магнит отключен
+                    updateUI(rawMove, false)
+                end,
                 onEnd = function()
                     Tween(knob, { Size = UDim2.new(0, 16, 0, 16) }, 0.1)
+                    -- При отпускании применяем магнит
+                    updateUI(currentV, true)
                     if opts.onDragEnd then opts.onDragEnd() end
                     if SaveConfig then SaveConfig() end
                 end,
             })
         end
     end)
-    for _, sm in ipairs(snapMarkers) do
-        local hitbox = New("TextButton", {
-            Size = UDim2.new(0, 12, 0, 12),
-            AnchorPoint = Vector2.new(0.5, 0.5),
-            Position = UDim2.new(sm.pct, 0, 0.5, 0),
-            BackgroundTransparency = 1, Text = "",
-            AutoButtonColor = false, Parent = track, ZIndex = 6,
-        })
-        hitbox.MouseButton1Click:Connect(function()
-            updateUI(sm.value, false)
-            if SaveConfig then SaveConfig() end
-        end)
-    end
     return updateUI
 end
 local function MakeKeycap(parent, defaultKey, actionId, opts)
