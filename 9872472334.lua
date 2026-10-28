@@ -5,7 +5,7 @@ if not ALLOWED_PLACE_IDS[game.PlaceId] then
     game:GetService("Players").LocalPlayer:Kick("Unsupported game!"); return
 end
 
-local SCRIPT_VERSION  = "17.2"
+local SCRIPT_VERSION  = "1.72"
 local UI_NAME         = "NoclipovUI"
 local ENV_CLEANUP_KEY = "__NoclipovCleanup"
 local ENV_VERSION_KEY = "__NoclipovVersion"
