@@ -94,7 +94,8 @@ local CFG = {
     MarkerMaxDist=500, PlaybackSpeed=1.0, TrimThreshold=1.0,
     CompactMode=false, AntiAfkEnabled=false, NotifyEnabled=true, HotkeyConflictCheck=true,
     UIScale=1.0, AutoReviveDelay=0.5,
-    SmartJumpBuffer=0.1, LandingMomentum=true,
+	SmartJumpBuffer=0.1, LandingMomentum=true,
+    SlopeVertBoost=1.0,   -- множитель вертикального импульса slope boost (0..2)
 }
 
 local Theme = {
@@ -136,6 +137,7 @@ local SLIDER_SNAPS = {
     ["Min Speed"]={10,15,20,25,30}, ["Vertical Cap"]={50,55,60,80,100},
     ["Max Turn Angle"]={15,30,45,60,90,120,180}, ["Brake Rate"]={40,60,80,100,150},
     ["Fast Fall Force"]={60,90,120,150,200}, ["Land Boost %"]={0,5,10,15,20},
+    ["Slope Vert Boost"]={0.0,0.5,0.7,1.0,1.4,2.0},
     ["Land Soft VY"]={20,30,40,50,60}, ["Marker Range"]={50,100,250,500,1000},
     ["Adaptive Min"]={0.3,0.5,0.7,1.0}, ["Adaptive Max"]={1.2,1.5,2.0,2.5},
     ["Playback Speed"]={0.5,1.0,1.5,2.0,2.5,3.0}, ["Trim Threshold"]={0.5,1.0,2.0,3.0,5.0},
@@ -516,8 +518,6 @@ function BindSystem.ResetToDefaults()
     for id in pairs(BindSystem.Buttons) do BindSystem.UpdateButton(id) end
 end
 
-BindSystem.ResetToDefaults()
-
 local ActiveInteraction = nil
 local function SetInteraction(handler) ActiveInteraction = handler end
 local function EnsureUIScale(inst)
@@ -835,11 +835,21 @@ local function TryBhop(dt)
 end
 
 -- ================= SLOPE =================
-local SLOPE = { Cooldown=0.55, MinSpeed=25, Gain=1.15, GainPerSpeed=0.01, MaxGain=2.2, SpeedRef=40, UpComponent=1.0, MinRise=1.5, NormalMin=math.cos(math.rad(70)), NormalMax=math.cos(math.rad(30)), AirRay=20, GroundRay=12 }
+local SLOPE = {
+    Cooldown=0.55, MinSpeed=25, Gain=1.15, GainPerSpeed=0.01, MaxGain=2.2,
+    SpeedRef=40, MinRise=1.5,
+    NormalMin=math.cos(math.rad(70)), NormalMax=math.cos(math.rad(30)),
+    AirRay=20, GroundRay=12,
+    -- VertFrac = доля от boostedSpeed, добавляемая как вертикальный импульс.
+    -- 0.7 сохраняет «ощущение» старого кода (0.707), но горизонталь больше
+    -- не уменьшается. Умножается на CFG.SlopeVertBoost (пользовательский множитель).
+    VertFrac = 0.7,
+}
 local DOWN_AIR, DOWN_GROUND = Vector3.new(0, -SLOPE.AirRay, 0), Vector3.new(0, -SLOPE.GroundRay, 0)
 local SlopeRay = RaycastParams.new(); SlopeRay.FilterType = Enum.RaycastFilterType.Exclude; SlopeRay.IgnoreWater = true
 local function TrySlopeBoost()
-    local isBraking = BindSystem.IsHeld("Brake")
+    local isBraking = Hotkeys["Brake"] and UserInputService:IsKeyDown(Hotkeys["Brake"])
+    -- Если применён патч BindSystem — заменить на: local isBraking = BindSystem.IsHeld("Brake")
     if isBraking or not State.SlopeBoostEnabled or not State.IsHoldingJump then return end
     local now = os.clock(); if now - BhopState.LastSlopeBoost < SLOPE.Cooldown then return end
     local char = GetChar(); if not char then return end
@@ -849,22 +859,55 @@ local function TrySlopeBoost()
     local vel = hrp.AssemblyLinearVelocity; if vel.Y < 2 then return end
     local flat = Vector3.new(vel.X, 0, vel.Z); local speed = flat.Magnitude; if speed < 0.1 then return end
     local fw = flat.Unit; local base = hrp.Position
-    local hB  = Workspace:Raycast(base - fw * 2.0, DOWN_AIR, SlopeRay); local hA1 = Workspace:Raycast(base + fw * 1.0, DOWN_AIR, SlopeRay); local hA2 = Workspace:Raycast(base + fw * 2.5, DOWN_AIR, SlopeRay)
-    if not (hB and hA1 and hA2) then hB  = Workspace:Raycast(base - fw * 2.0, DOWN_GROUND, SlopeRay); hA1 = Workspace:Raycast(base + fw * 1.0, DOWN_GROUND, SlopeRay); hA2 = Workspace:Raycast(base + fw * 2.5, DOWN_GROUND, SlopeRay) end
+    local hB  = Workspace:Raycast(base - fw * 2.0, DOWN_AIR, SlopeRay)
+    local hA1 = Workspace:Raycast(base + fw * 1.0, DOWN_AIR, SlopeRay)
+    local hA2 = Workspace:Raycast(base + fw * 2.5, DOWN_AIR, SlopeRay)
+    if not (hB and hA1 and hA2) then
+        hB  = Workspace:Raycast(base - fw * 2.0, DOWN_GROUND, SlopeRay)
+        hA1 = Workspace:Raycast(base + fw * 1.0, DOWN_GROUND, SlopeRay)
+        hA2 = Workspace:Raycast(base + fw * 2.5, DOWN_GROUND, SlopeRay)
+    end
     if not (hB and hA1 and hA2) then return end
-    local r1 = hA1.Position.Y - hB.Position.Y; local r2 = hA2.Position.Y - hB.Position.Y
+    local r1 = hA1.Position.Y - hB.Position.Y
+    local r2 = hA2.Position.Y - hB.Position.Y
     if r1 <= 0 or r2 <= 0 or r1 < SLOPE.MinRise or r2 < SLOPE.MinRise * 0.7 or r1 > r2 * 2.0 then return end
-    local upDot = hA1.Normal.Y; if upDot >= SLOPE.NormalMax or upDot <= SLOPE.NormalMin then return end
+    local upDot = hA1.Normal.Y
+    if upDot >= SLOPE.NormalMax or upDot <= SLOPE.NormalMin then return end
+
     BhopState.LastSlopeBoost = now
+
     task.spawn(function()
-        task.wait(0.03); if not State.SlopeBoostEnabled or not State.IsHoldingJump or not hrp.Parent then return end
-        local v2 = hrp.AssemblyLinearVelocity; if v2.Y < 0 then return end
-        local sp = Vector3.new(v2.X, 0, v2.Z).Magnitude; local over = math.max(0, sp - SLOPE.SpeedRef)
+        task.wait(0.03)
+        if not State.SlopeBoostEnabled or not State.IsHoldingJump or not hrp.Parent then return end
+        local v2 = hrp.AssemblyLinearVelocity
+        if v2.Y < 0 then return end  -- только пока игрок взлетает
+
+        -- ── Горизонталь ────────────────────────────────────────────────
+        local sp = Vector3.new(v2.X, 0, v2.Z).Magnitude
+        local over = math.max(0, sp - SLOPE.SpeedRef)
         local g = math.min(SLOPE.Gain + over * SLOPE.GainPerSpeed, SLOPE.MaxGain)
         local boostedSpeed = math.max(sp, SLOPE.MinSpeed) * g
-        hrp.AssemblyLinearVelocity = (fw + Vector3.new(0, SLOPE.UpComponent, 0)).Unit * boostedSpeed
+
+        -- ── Вертикаль (с мягким кэпом) ─────────────────────────────────
+        local vertFrac  = (SLOPE.VertFrac or 0.7) * (CFG.SlopeVertBoost or 1.0)
+        local vertCap   = CFG.VertCap or 55
+        local currentY  = v2.Y
+        local targetY   = currentY + boostedSpeed * vertFrac
+
+        -- Жёсткий потолок: суммарная вертикаль не выше VertCap
+        if targetY > vertCap then targetY = vertCap end
+        -- Никогда не уменьшаем уже набранную вертикаль (плавность)
+        if targetY < currentY then targetY = currentY end
+
+        -- ── Применение: горизонталь через LV, вертикаль напрямую ──────
+        local hvx, hvz = fw.X * boostedSpeed, fw.Z * boostedSpeed
+        hrp.AssemblyLinearVelocity = Vector3.new(hvx, targetY, hvz)
         local lv = BhopState.TrackedLV
-        if lv and lv.Parent then EnsureLVBoostable(lv); lv.PlaneVelocity = Vector2.new(fw.X * boostedSpeed, fw.Z * boostedSpeed) end
+        if lv and lv.Parent then
+            EnsureLVBoostable(lv)
+            lv.PlaneVelocity = Vector2.new(hvx, hvz)
+        end
+
         BhopState.TargetSpeed = math.max(BhopState.TargetSpeed, boostedSpeed)
     end)
 end
@@ -1932,6 +1975,11 @@ do
     CreateSliderCard(TunePage, "Fast Fall Force", "Сила падения (X)", 30, 300, CFG.FastFallForce, "⬇", function(v) CFG.FastFallForce = v end)
     CreateSliderCard(TunePage, "Land Boost %", "Прибавка при посадке", 0, 20, CFG.LandingBoostPercent, "📊", function(v) CFG.LandingBoostPercent = v end)
     CreateSliderCard(TunePage, "Land Soft VY", "Порог мягкой посадки", 10, 60, CFG.LandingSoftVY, "📉", function(v) CFG.LandingSoftVY = v end)
+	CreateSection(TunePage, "Slope Boost")
+    CreateSliderCard(TunePage, "Slope Vert Boost",
+        "Множитель вертикали от slope boost (0 = только горизонталь)",
+        0.0, 2.0, CFG.SlopeVertBoost, "⛷",
+        function(v) CFG.SlopeVertBoost = v end, 2)
 
     CreateSection(VisPage, "Effects")
     CreateToggleCard(VisPage, "Landing Prediction", "Визуальный таймер до приземления", State.LandPredEnabled, "🎯", function(v) 
@@ -2124,6 +2172,7 @@ local SliderMap = {
     AdaptiveGainMin="Adaptive Min", AdaptiveGainMax="Adaptive Max",
     PlaybackSpeed="Playback Speed", TrimThreshold="Trim Threshold", UIScale="UI Scale",
     SmartJumpBuffer="Jump Buffer", AutoReviveDelay="Revive Delay",
+    SlopeVertBoost="Slope Vert Boost",
 }
 local function UDim2ToTable(u) return { XScale=u.X.Scale, XOffset=u.X.Offset, YScale=u.Y.Scale, YOffset=u.Y.Offset } end
 local function TableToUDim2(t)
