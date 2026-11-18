@@ -1,5 +1,5 @@
 -- ============================================================
--- NOCLIPOV v2.18 — Refactored & Optimized Main Code (Updated)
+-- NOCLIPOV v2.18 — Refactored & Optimized Main Code
 -- ============================================================
 repeat task.wait() until game:IsLoaded()
 local ALLOWED_PLACE_IDS = { [9872472334]=true, [10662098230]=true, [10808838353]=true }
@@ -32,6 +32,7 @@ end
 local additional = isfile("Noclipov/modules/additional.lua") and dofile("Noclipov/modules/additional.lua") or loadstring(game:HttpGet("https://raw.githubusercontent.com/noclipov/Roblox-Luas/refs/heads/main/Libs/additional.lua"))()
 local UI = additional.module("ui.lua", true, false)
 local movementLib = additional.module("movement.lua", true, false)
+local predictorLib = additional.module("predictor.lua", true, false)
 
 local Movement = movementLib
 if type(movementLib.new) == "function" then
@@ -64,7 +65,6 @@ local CFG = {
     SlopeVertBoost=1.0, SlopeCooldown=0.55, SlopeMinSpeed=25,
     SlopeBaseGain=1.15, SlopeMaxGain=2.2, SlopeGainPerSpeed=0.01,
 }
-local PRED_CONST = { MinVisibleDist=15, FadeInSpeed=10, FadeOutSpeed=14, ToleranceTime=0.4, TerminalVel=200, MaxSteps=120, NormalMin=0.3 }
 local State = {
     BhopEnabled=false, JumpAccelEnabled=false, IsHoldingJump=false,
     SlopeBoostEnabled=false, LandPredEnabled=false,
@@ -72,7 +72,6 @@ local State = {
 }
 
 local LoadConfig, RefreshRecorderList
-local DestroyPred, PredState
 local Cleanup = function() end
 
 -- ================= DISPOSER =================
@@ -165,10 +164,6 @@ end
 local function FullCharacterReset()
     if BhopState.HumStateConn then pcall(function() BhopState.HumStateConn:Disconnect() end); BhopState.HumStateConn = nil end
     ResetBhopState()
-    if DestroyPred then DestroyPred() end
-    if PredState then
-        PredState.FadeState = "hidden"; PredState.FadeProgress = 0; PredState.IdleTime = 0; PredState.LastSuccess = 0
-    end
     if Movement and Movement.StopPlayback then pcall(function() Movement:StopPlayback(true) end) end
     displaySpeed = 0
     if BindSystem.Capture then pcall(function() BindSystem.CaptureCancel() end) end
@@ -303,273 +298,6 @@ local function TrySlopeBoost()
     end)
 end
 
--- ================= PREDICTION =================
-local PRED_RAY = RaycastParams.new(); PRED_RAY.FilterType = Enum.RaycastFilterType.Exclude; PRED_RAY.IgnoreWater = true
-pcall(function() PRED_RAY.RespectCanCollide = true end)
-PredState = { Data=nil, SmoothCFrame=nil, FadeState="hidden", FadeProgress=0, LastSuccess=0, LastUpdate=0, ArcParts={}, IdleTime=0, CachedImpact=nil, CachedImpactTime=nil, CachedImpactAt=0, LastPath=nil, __errLogged=false, __errLoggedAt=0 }
-
-local function PredictLanding(hrp, hum, maxTime)
-    local hipHeight = math.max(hum.HipHeight or 0, hrp.Size.Y * 0.5 + 1)
-    local pos = hrp.Position - Vector3.new(0, hipHeight, 0)
-    local vel = hrp.AssemblyLinearVelocity
-    local g = Workspace.Gravity; local terminal = PRED_CONST.TerminalVel; local dt = 0.025
-    local maxSteps = math.min(math.floor(maxTime / dt), PRED_CONST.MaxSteps); local normalMin = PRED_CONST.NormalMin
-    PRED_RAY.FilterDescendantsInstances = {LocalPlayer.Character}
-    local path = {pos}
-    if vel.Y >= -5 then
-        local groundRay = Workspace:Raycast(pos, Vector3.new(0, -hipHeight - 1, 0), PRED_RAY)
-        if groundRay and groundRay.Normal.Y > normalMin then return groundRay.Position, path, 0.01 end
-    end
-    for i = 1, maxSteps do
-        local vY = math.max(vel.Y - g * dt, -terminal)
-        local nextVel = Vector3.new(vel.X, vY, vel.Z)
-        local nextPos = Vector3.new(pos.X + vel.X*dt, pos.Y + vel.Y*dt - 0.5*g*dt*dt, pos.Z + vel.Z*dt)
-        local rayDir = nextPos - pos; local dist = rayDir.Magnitude
-        table.insert(path, nextPos)
-        if dist > 0.05 then
-            local hit = Workspace:Raycast(pos, rayDir, PRED_RAY)
-            if hit then
-                if hit.Normal.Y > normalMin then
-                    local hitDist = (hit.Position - pos).Magnitude
-                    local alpha = math.clamp(hitDist / math.max(dist, 0.01), 0, 1)
-                    return hit.Position, path, math.max((i - 1 + alpha) * dt, 0.01)
-                elseif hit.Normal.Y <= 0.2 and nextVel.Y <= 0 then return nil, nil end
-            end
-        end
-        pos = nextPos; vel = nextVel
-    end
-    return nil, nil
-end
-DestroyPred = function()
-    if PredState.Data then
-        for _, key in ipairs({"root","ring","ringOuter","innerRing","dot","dotGlow","beam","ringLight"}) do local p = PredState.Data[key]; if p then pcall(function() p:Destroy() end) end end
-        PredState.Data = nil
-    end
-    for _, p in ipairs(PredState.ArcParts) do pcall(function() p:Destroy() end) end
-    table.clear(PredState.ArcParts)
-    PredState.SmoothCFrame = nil; PredState.CachedImpact = nil; PredState.CachedImpactTime = nil; PredState.LastPath = nil; PredState.__errLogged = false
-end
-local function EnsurePred()
-    if PredState.Data and PredState.Data.root and PredState.Data.root.Parent then return PredState.Data end
-    DestroyPred()
-    local accent = UI:GetTheme().Accent
-    
-    -- Корневой объект (невидимый якорь)
-    local root = Instance.new("Part"); root.Name="Noclipov_LandPred_Root"; root.Size=Vector3.new(0.1,0.1,0.1); root.Transparency=1; root.Anchored=true; root.CanCollide=false; root.CanQuery=false; root.CanTouch=false; root.Parent=Workspace
-    
-    -- Основное кольцо (плоское, на земле)
-    local ring = Instance.new("Part"); ring.Name="Noclipov_LandPred_Ring"; ring.Shape=Enum.PartType.Cylinder; ring.Size=Vector3.new(0.05, 4.0, 4.0); ring.Anchored=true; ring.CanCollide=false; ring.CanQuery=false; ring.CanTouch=false; ring.Material=Enum.Material.Neon; ring.Color=accent; ring.Transparency=0.1; ring.CFrame = CFrame.Angles(0, 0, math.rad(90)); ring.Parent=Workspace
-    
-    -- Внутреннее кольцо
-    local innerRing = Instance.new("Part"); innerRing.Name="Noclipov_LandPred_InnerRing"; innerRing.Shape=Enum.PartType.Cylinder; innerRing.Size=Vector3.new(0.05, 2.0, 2.0); innerRing.Anchored=true; innerRing.CanCollide=false; innerRing.CanQuery=false; innerRing.CanTouch=false; innerRing.Material=Enum.Material.Neon; innerRing.Color=UI:GetTheme().TextBright; innerRing.Transparency=0.3; innerRing.CFrame = CFrame.Angles(0, 0, math.rad(90)); innerRing.Parent=Workspace
-    
-    -- Внешнее тонкое кольцо (радар)
-    local ringOuter = Instance.new("Part"); ringOuter.Name="Noclipov_LandPred_RingOuter"; ringOuter.Shape=Enum.PartType.Cylinder; ringOuter.Size=Vector3.new(0.02, 6.0, 6.0); ringOuter.Anchored=true; ringOuter.CanCollide=false; ringOuter.CanQuery=false; ringOuter.CanTouch=false; ringOuter.Material=Enum.Material.ForceField; ringOuter.Color=accent; ringOuter.Transparency=0.6; ringOuter.CFrame = CFrame.Angles(0, 0, math.rad(90)); ringOuter.Parent=Workspace
-    
-    -- Перекрестие (2 тонкие полоски)
-    local cross1 = Instance.new("Part"); cross1.Name="Noclipov_Cross1"; cross1.Size=Vector3.new(0.1, 0.05, 5.5); cross1.Anchored=true; cross1.CanCollide=false; cross1.CanQuery=false; cross1.CanTouch=false; cross1.Material=Enum.Material.Neon; cross1.Color=accent; cross1.Transparency=0.5; cross1.Parent=Workspace
-    local cross2 = Instance.new("Part"); cross2.Name="Noclipov_Cross2"; cross2.Size=Vector3.new(5.5, 0.05, 0.1); cross2.Anchored=true; cross2.CanCollide=false; cross2.CanQuery=false; cross2.CanTouch=false; cross2.Material=Enum.Material.Neon; cross2.Color=accent; cross2.Transparency=0.5; cross2.Parent=Workspace
-
-    -- Центральная точка
-    local dot = Instance.new("Part"); dot.Name="Noclipov_LandPred_Dot"; dot.Shape=Enum.PartType.Ball; dot.Size=Vector3.new(0.4,0.4,0.4); dot.Anchored=true; dot.CanCollide=false; dot.CanQuery=false; dot.CanTouch=false; dot.Material=Enum.Material.Neon; dot.Color=UI:GetTheme().TextBright; dot.Transparency=0.05; dot.Parent=Workspace
-    
-    -- Свечение вокруг точки
-    local dotGlow = Instance.new("Part"); dotGlow.Name="Noclipov_LandPred_DotGlow"; dotGlow.Shape=Enum.PartType.Ball; dotGlow.Size=Vector3.new(1.0,1.0,1.0); dotGlow.Anchored=true; dotGlow.CanCollide=false; dotGlow.CanQuery=false; dotGlow.CanTouch=false; dotGlow.Material=Enum.Material.ForceField; dotGlow.Color=accent; dotGlow.Transparency=0.8; dotGlow.Parent=Workspace
-    
-    -- Свет
-    local ringLight = Instance.new("PointLight"); ringLight.Color=accent; ringLight.Range=6; ringLight.Brightness=0.5; ringLight.Shadows=false; ringLight.Parent=ring
-
-    -- Вертикальный луч
-    local att0=Instance.new("Attachment"); att0.Position=Vector3.zero; att0.Parent=root
-    local att1=Instance.new("Attachment"); att1.Position=Vector3.new(0,20,0); att1.Parent=root
-    local beam=Instance.new("Beam"); beam.Attachment0=att0; beam.Attachment1=att1; beam.Width0=0.15; beam.Width1=0.0; beam.Color=ColorSequence.new(accent)
-    beam.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0.8), NumberSequenceKeypoint.new(0.5,0.4), NumberSequenceKeypoint.new(1,1)})
-    beam.FaceCamera=true; beam.LightEmission=1; beam.LightInfluence=0; beam.Parent=root
-
-    -- Траектория (шары вместо кубиков)
-    for _ = 1, 20 do
-        local p = Instance.new("Part"); p.Name="Noclipov_LandPred_Arc"; p.Shape=Enum.PartType.Ball; p.Size=Vector3.new(0.1,0.1,0.1); p.Anchored=true; p.CanCollide=false; p.CanQuery=false; p.CanTouch=false; p.Material=Enum.Material.Neon; p.Color=accent; p.Transparency=1; p.Parent=Workspace
-        table.insert(PredState.ArcParts, p)
-    end
-    
-    PredState.Data = {
-        root=root, ring=ring, innerRing=innerRing, ringOuter=ringOuter, 
-        cross1=cross1, cross2=cross2, dot=dot, dotGlow=dotGlow, 
-        ringLight=ringLight, beam=beam
-    }
-    return PredState.Data
-end
-UI.GUI.ThemeSystem.Subscribe(function(nt)
-    local col = nt.Accent
-    if PredState.Data then
-        if PredState.Data.ring then PredState.Data.ring.Color = col end
-        if PredState.Data.ringOuter then PredState.Data.ringOuter.Color = col end
-        if PredState.Data.dotGlow then PredState.Data.dotGlow.Color = col end
-        if PredState.Data.beam then PredState.Data.beam.Color = ColorSequence.new(col) end
-        if PredState.Data.ringLight then PredState.Data.ringLight.Color = col end
-    end
-    for _, p in ipairs(PredState.ArcParts) do if p.Parent then p.Color = col end end
-    
-    pcall(function()
-        for _, obj in ipairs(Workspace:GetChildren()) do
-            if obj:IsA("BasePart") and (obj.Name:match("^Noclipov_Marker") or obj.Name:match("^Noclipov_Path") or obj.Name:match("^Noclipov_Playback")) then
-                obj.Color = col
-            elseif obj:IsA("Model") and (obj.Name:match("^Noclipov_Marker") or obj.Name:match("^Noclipov_Path") or obj.Name:match("^Noclipov_Playback")) then
-                for _, child in ipairs(obj:GetDescendants()) do
-                    if child:IsA("BasePart") then child.Color = col
-                    elseif child:IsA("Beam") then child.Color = ColorSequence.new(col)
-                    elseif child:IsA("Trail") then child.Color = ColorSequence.new(col)
-                    elseif child:IsA("PointLight") then child.Color = col end
-                end
-            end
-        end
-    end)
-
-    if Movement and Movement.RefreshMarkers then 
-        pcall(function() Movement:RefreshMarkers() end) 
-    end
-end)
-local function fadeAlpha(base)
-    if PredState.FadeProgress <= 0 then return 1 end
-    if PredState.FadeProgress >= 1 then return base end
-    return 1 - PredState.FadeProgress * (1 - base)
-end
-local function UpdatePrediction(dt)
-    if not State.LandPredEnabled and PredState.FadeState == "hidden" and not PredState.Data then return end
-    if Movement and Movement.PlayState and Movement.PlayState.Active then
-        if PredState.FadeState ~= "hidden" then PredState.FadeState = "hidden"; PredState.FadeProgress = 0; DestroyPred() end; return
-    end
-    local now = os.clock(); if now - PredState.LastUpdate < 0.033 then return end
-    local frameDt = now - PredState.LastUpdate; PredState.LastUpdate = now
-    local predPos, path, predTime
-    local hrp = GetHrp(); local hum = GetHum()
-    if State.LandPredEnabled and hrp and hum and IsAirborne(hum, hrp) then
-        local ok, c, p, t = pcall(PredictLanding, hrp, hum, 3.0)
-        if ok and c and p and t then
-            local dist = (hrp.Position - c).Magnitude
-            if dist >= PRED_CONST.MinVisibleDist then
-                predPos, path, predTime = c, p, t
-                PredState.CachedImpact = c; PredState.CachedImpactTime = t; PredState.CachedImpactAt = now; PredState.LastPath = p
-            end
-        end
-    end
-    
-    if predPos then
-        PredState.LastSuccess = now; PredState.IdleTime = 0
-        if PredState.FadeState == "hidden" then PredState.FadeState = "showing"; PredState.FadeProgress = 0
-        elseif PredState.FadeState == "hiding" then PredState.FadeState = "showing" end
-    else
-        if State.LandPredEnabled and PredState.CachedImpact and (now - (PredState.CachedImpactAt or 0) < 0.25) then
-            local cacheDist = (hrp and (hrp.Position - PredState.CachedImpact).Magnitude) or math.huge
-            if cacheDist >= PRED_CONST.MinVisibleDist then
-                predPos = PredState.CachedImpact; predTime = PredState.CachedImpactTime; path = PredState.LastPath; PredState.LastSuccess = now
-            elseif PredState.FadeState ~= "hidden" then PredState.FadeState = "hiding" end
-        else
-            if (PredState.FadeState == "showing" or PredState.FadeState == "visible") and (now - PredState.LastSuccess > PRED_CONST.ToleranceTime) then PredState.FadeState = "hiding" end
-        end
-    end
-    
-    if PredState.FadeState == "showing" then
-        PredState.FadeProgress = math.min(1, PredState.FadeProgress + frameDt * PRED_CONST.FadeInSpeed)
-        if PredState.FadeProgress >= 1 then PredState.FadeState = "visible" end
-    elseif PredState.FadeState == "hiding" then
-        PredState.FadeProgress = math.max(0, PredState.FadeProgress - frameDt * PRED_CONST.FadeOutSpeed)
-        if PredState.FadeProgress <= 0 then PredState.FadeState = "hidden"; DestroyPred(); return end
-    end
-    if PredState.FadeState == "hidden" then
-        PredState.IdleTime = PredState.IdleTime + frameDt
-        if PredState.IdleTime > 2 and PredState.Data then DestroyPred() end; return
-    end
-    if not hrp then return end
-    
-    local data = EnsurePred(); local theme = UI:GetTheme()
-    
-    if predPos then
-        local targetCF = CFrame.new(predPos + Vector3.new(0, 0.05, 0))
-        if not PredState.SmoothCFrame then PredState.SmoothCFrame = targetCF end
-        PredState.SmoothCFrame = PredState.SmoothCFrame:Lerp(targetCF, math.clamp(frameDt * 18, 0, 1))
-        
-        -- Вычисляем "срочность" (0 - высоко, 1 - прямо сейчас приземлимся)
-        local urgency = math.clamp(1 - (predTime or 2) / 2.0, 0, 1)
-        local pulseSpeed = 2.0 + urgency * 4.0
-        local pulse = 0.5 + 0.5 * math.sin(now * math.pi * pulseSpeed)
-        
-        -- Цвет: плавный переход от акцента к красному при опасном сближении
-        local baseColor = theme.Accent:Lerp(theme.Danger, urgency)
-        local timeColor = baseColor
-        
-        data.root.Position = PredState.SmoothCFrame.Position
-        
-        -- Настройка колец
-        local ringScale = 4.0 + pulse * (0.2 + urgency * 0.3)
-        data.ring.CFrame = PredState.SmoothCFrame * CFrame.new(0, 0.02, 0) * CFrame.Angles(0, 0, math.rad(90))
-        data.ring.Transparency = fadeAlpha(0.1 + pulse*0.1 + urgency*0.1); data.ring.Size = Vector3.new(0.05, ringScale, ringScale); data.ring.Color = timeColor
-        
-        local innerScale = 2.0 - urgency * 0.5 + pulse * 0.1
-        data.innerRing.CFrame = PredState.SmoothCFrame * CFrame.new(0, 0.04, 0) * CFrame.Angles(0, 0, math.rad(90))
-        data.innerRing.Transparency = fadeAlpha(0.2 + pulse*0.2); data.innerRing.Size = Vector3.new(0.05, innerScale, innerScale); data.innerRing.Color = theme.TextBright
-        
-        local outerScale = 6.0 + pulse * (0.3 + urgency * 0.5)
-        data.ringOuter.CFrame = PredState.SmoothCFrame * CFrame.new(0, 0.01, 0) * CFrame.Angles(0, 0, math.rad(90)) * CFrame.Angles(0, now*1.5, 0)
-        data.ringOuter.Transparency = fadeAlpha(0.6 - pulse*0.1 - urgency*0.2); data.ringOuter.Size = Vector3.new(0.02, outerScale, outerScale); data.ringOuter.Color = timeColor
-        
-        -- Перекрестие (вращается)
-        local crossSize = 5.5 + pulse * 0.5
-        data.cross1.CFrame = PredState.SmoothCFrame * CFrame.new(0, 0.05, 0) * CFrame.Angles(0, now * 2, 0)
-        data.cross1.Size = Vector3.new(0.08, 0.04, crossSize); data.cross1.Color = timeColor; data.cross1.Transparency = fadeAlpha(0.4)
-        data.cross2.CFrame = PredState.SmoothCFrame * CFrame.new(0, 0.05, 0) * CFrame.Angles(0, now * 2, math.rad(90))
-        data.cross2.Size = Vector3.new(crossSize, 0.04, 0.08); data.cross2.Color = timeColor; data.cross2.Transparency = fadeAlpha(0.4)
-        
-        -- Точка в центре
-        local dotSize = 0.4 + urgency * 0.3 + pulse * 0.1
-        data.dot.CFrame = CFrame.new(PredState.SmoothCFrame.Position + Vector3.new(0, 0.15, 0))
-        data.dot.Size = Vector3.new(dotSize, dotSize, dotSize); data.dot.Transparency = fadeAlpha(0.05); data.dot.Color = timeColor
-        
-        local auraSize = 1.0 + pulse * (0.3 + urgency * 0.6)
-        data.dotGlow.CFrame = CFrame.new(PredState.SmoothCFrame.Position + Vector3.new(0, 0.15, 0))
-        data.dotGlow.Size = Vector3.new(auraSize, auraSize, auraSize); data.dotGlow.Transparency = fadeAlpha(0.8 - pulse * 0.2); data.dotGlow.Color = timeColor
-        
-        -- Свет и луч
-        if data.ringLight then data.ringLight.Enabled = true; data.ringLight.Color = timeColor; data.ringLight.Brightness = 0.2 + pulse * 0.1 end
-        if data.beam then 
-            data.beam.Color = ColorSequence.new(timeColor)
-            data.beam.Width0 = 0.1 + urgency * 0.1
-        end
-        
-        -- Траектория (плавные шары)
-        if path and #path > 2 then
-            local N = #path; local numSeg = #PredState.ArcParts
-            for i, seg in ipairs(PredState.ArcParts) do
-                local idx1 = math.clamp(math.floor((i - 1) / numSeg * (N - 1)) + 1, 1, N - 1)
-                local idx2 = math.clamp(math.floor(i / numSeg * (N - 1)) + 1, idx1 + 1, N)
-                local A = path[idx1]; local B = path[idx2]; local len = (B - A).Magnitude
-                if len > 0.05 then
-                    local t = (i - 1) / (numSeg - 1)
-                    local pos = A:Lerp(B, 0.5)
-                    local size = 0.1 + (1 - t) * 0.1
-                    seg.Size = Vector3.new(size, size, size)
-                    seg.Position = pos
-                    seg.Color = timeColor:Lerp(theme.Accent, t * 0.5)
-                    seg.Transparency = fadeAlpha(math.max(0.1, (0.6 - t*0.3) - urgency*0.1))
-                else seg.Transparency = 1 end
-            end
-        else for _, p in ipairs(PredState.ArcParts) do p.Transparency = 1 end end
-    else
-        -- Плавное затухание при исчезновении
-        for _, p in ipairs(PredState.ArcParts) do p.Transparency = 1 end
-        data.ring.Transparency = 1; data.innerRing.Transparency = 1; data.ringOuter.Transparency = 1
-        data.cross1.Transparency = 1; data.cross2.Transparency = 1
-        data.dot.Transparency = 1; data.dotGlow.Transparency = 1
-        if data.ringLight then data.ringLight.Enabled = false end
-    end
-end
-local function SweepOrphanPredParts(force)
-    if not force and (State.LandPredEnabled or PredState.FadeState ~= "hidden" or PredState.Data or #PredState.ArcParts > 0) then return end
-    for _, obj in ipairs(Workspace:GetChildren()) do
-        if obj:IsA("BasePart") and (obj.Name:match("^Noclipov_Pred_") or obj.Name:match("^Noclipov_LandPred_")) then pcall(function() obj:Destroy() end) end
-    end
-end
-
 -- ================= UI SHELL =================
 local Window = UI:CreateWindow({
     Title = "NOCLIPOV", Version = SCRIPT_VERSION,
@@ -580,6 +308,49 @@ UI.ScreenGui = Window.ScreenGui
 
 UI.Watermark = Window:CreateWatermark()
 UI.RecorderStatus = Window:CreateRecorderStatus()
+
+-- ⚡ ИНИЦИАЛИЗАЦИЯ НОВОГО ПРЕДИКТОРА
+local Predictor = predictorLib.new({
+    AutoUpdate = true,
+    Color = UI:GetTheme().Accent,
+    DangerColor = UI:GetTheme().Danger
+})
+
+local PlayerPrediction = Predictor:Add("LocalPlayer", {
+    Mode = "Ballistic",
+    Horizon = 3,
+    MinDist = 15,
+    Visual = { 
+        Marker = true, 
+        Trail = true, 
+        Beacon = true,
+        Light = true 
+    },
+    GetState = function()
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local hum = char and char:FindFirstChild("Humanoid")
+        if not hrp or not hum or hum.Health <= 0 then return nil end
+        
+        if IsAirborne(hum, hrp) then
+            return { 
+                Position = hrp.Position, 
+                Velocity = hrp.AssemblyLinearVelocity, 
+                Ignore = { char } 
+            }
+        end
+        return nil
+    end
+})
+
+PlayerPrediction:SetEnabled(State.LandPredEnabled)
+
+UI.GUI.ThemeSystem.Subscribe(function(theme)
+    Predictor:SetColors({
+        Color = theme.Accent,
+        DangerColor = theme.Danger
+    })
+end)
 
 function UI.ApplyCompactMode(enabled)
     CFG.CompactMode = enabled
@@ -701,7 +472,7 @@ TunePage:Slider({ Name = "Slope Vert Boost", ConfigKey = "SlopeVertBoost", Descr
 VisPage:Section("Effects")
 VisPage:Toggle({ Name = "Landing Prediction", ConfigKey = "LandPredEnabled", Description = "Визуальный таймер до приземления", Default = State.LandPredEnabled, Icon = "🎯", Callback = function(v)
     State.LandPredEnabled = v
-    if not v then PredState.FadeState = "hidden"; PredState.FadeProgress = 0; PredState.IdleTime = 0; DestroyPred() end
+    if PlayerPrediction then PlayerPrediction:SetEnabled(v) end
 end })
 VisPage:Section("Markers")
 VisPage:Toggle({ 
@@ -851,7 +622,6 @@ task.defer(function() if RefreshRecorderList then RefreshRecorderList() end end)
 local function UDim2ToTable(u) return {XScale = u.X.Scale, XOffset = u.X.Offset, YScale = u.Y.Scale, YOffset = u.Y.Offset} end
 local function TableToUDim2(t) if type(t) ~= "table" then return nil end; return UDim2.new(tonumber(t.XScale) or 0, tonumber(t.XOffset) or 0, tonumber(t.YScale) or 0, tonumber(t.YOffset) or 0) end
 local function BuildSaveData()
-    -- ui.lua автоматически соберет Toggles, Sliders и Hotkeys благодаря ConfigKey
     local data = {
         version = SCRIPT_VERSION, 
         IsVisible = Window.IsVisible, 
@@ -876,10 +646,8 @@ do
         local jsonOk, data = pcall(function() return HttpService:JSONDecode(content) end)
         if not jsonOk or type(data) ~= "table" then Log("LOAD FAIL: invalid JSON"); return end
         
-        -- ⚡ Загружаем все UI компоненты (включая тублеры и слайдеры по ConfigKey) через ui.lua
         Window:_LoadConfig()
 
-        -- Восстанавливаем кастомные позиции окон
         local p = TableToUDim2(data.WatermarkPos); if p then UI.Watermark.Instance.Position = p end
         p = TableToUDim2(data.RecorderStatusPos); if p then UI.RecorderStatus.Instance.Position = p end
         
@@ -896,9 +664,12 @@ do
         pcall(function() SetAntiAfkEnabled(CFG.AntiAfkEnabled == true) end)
         pcall(function() UI.ApplyCompactMode(CFG.CompactMode == true) end)
         
-        -- Принудительно применяем состояние маркеров
         if Movement and Movement.SetMarkersEnabled then
             Movement:SetMarkersEnabled(State.MarkersEnabled)
+        end
+        
+        if PlayerPrediction then
+            PlayerPrediction:SetEnabled(State.LandPredEnabled)
         end
         
         Log("LOAD OK from " .. source .. " (v" .. (data.version or "?") .. ")")
@@ -911,7 +682,6 @@ TrackConnection(LocalPlayer.CharacterRemoving:Connect(function()
 end))
 TrackConnection(LocalPlayer.CharacterAdded:Connect(function()
     FullCharacterReset()
-    task.delay(0.5, function() pcall(function() SweepOrphanPredParts(true) end) end)
     task.delay(1, function() if RefreshRecorderList then RefreshRecorderList() end end)
 end))
 
@@ -1010,17 +780,18 @@ end))
 
 -- ================= HEARTBEAT =================
 do
-    local lastOrphanSweep, lastUIUpdate, lastTelemetryUpdate = 0, 0, 0
     local lastRecStatus, lastRecHelp = 0, 0
+    local lastTelemetryUpdate = 0 -- ⚡ ВОЗВРАЩАЕМ ПЕРЕМЕННУЮ
+    
     TrackConnection(RunService.Heartbeat:Connect(function(dt)
         local now = os.clock()
         if BindSystem.Capture then BindSystem.CaptureTick() end
         
-        if State.LandPredEnabled or PredState.FadeState ~= "hidden" or PredState.Data then
-            local ok, err = pcall(UpdatePrediction, dt)
-            if not ok and not PredState.__errLogged then PredState.__errLogged = true; PredState.__errLoggedAt = now; warn("[Noclipov] Prediction error: " .. tostring(err)) end
+        if now - lastRecStatus > 0.05 then 
+            lastRecStatus = now
+            UI.UpdateRecorderStatus() 
         end
-        if now - lastRecStatus > 0.05 then lastRecStatus = now; UI.UpdateRecorderStatus() end
+        
         if now - lastRecHelp > 0.5 then
             lastRecHelp = now
             if UI.RecHelpLabel then
@@ -1028,7 +799,36 @@ do
                 if UI.RecHelpLabel.Text ~= txt then UI.RecHelpLabel.Text = txt end
             end
         end
-        if now - lastOrphanSweep > 3.0 then lastOrphanSweep = now; SweepOrphanPredParts() end
+        
+        -- ⚡ ВОССТАНОВЛЕННЫЙ БЛОК ТЕЛЕМЕТРИИ (Ватермарк)
+        if now - lastTelemetryUpdate > 0.1 then
+            lastTelemetryUpdate = now
+            local speed = 0
+            local hrp = GetHrp()
+            if hrp then
+                local v = hrp.AssemblyLinearVelocity
+                speed = math.sqrt(v.X*v.X + v.Z*v.Z)
+            end
+            displaySpeed = speed
+            
+            if UI.Watermark and UI.Watermark.Instance.Visible then
+                UI.Watermark.SpeedVal.Text = string.format("%.1f", speed)
+                
+                local fps = 60
+                pcall(function() fps = math.floor(1 / game:GetService("Stats").FrameTime) end)
+                if UI.Watermark.FpsVal then UI.Watermark.FpsVal.Text = tostring(fps) end
+                
+                local ping = 0
+                pcall(function() ping = math.floor(game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue()) end)
+                if UI.Watermark.PingVal then UI.Watermark.PingVal.Text = tostring(ping) end
+                
+                if UI.Watermark.MaxVal then UI.Watermark.MaxVal.Text = string.format("%.0f", CFG.MaxSpeed) end
+                if UI.Watermark.TimeVal then UI.Watermark.TimeVal.Text = FormatTime(os.clock() - SessionStats.StartTime) end
+                
+                local pct = math.clamp(speed / math.max(CFG.MaxSpeed, 1), 0, 1)
+                if UI.Watermark.SpeedBarFill then UI.Watermark.SpeedBarFill.Size = UDim2.new(pct, 0, 1, 0) end
+            end
+        end
     end))
 end
 
@@ -1079,41 +879,21 @@ for _, item in ipairs(HotkeysList) do
     BindSystem.UpdateButton(item.id)
 end
 if not Window.IsVisible then Window.MainFrame.Visible = false end
-task.defer(function() SweepOrphanPredParts(true) end)
-
-task.defer(function() 
-    if Movement and Movement.RefreshMarkers then 
-        pcall(function() Movement:RefreshMarkers() end) 
-    end
-end)
-
 task.delay(0.5, function() NotificationSystem.Push("Noclipov v" .. SCRIPT_VERSION .. " loaded", "success", 3) end)
 
 -- ================= CLEANUP =================
 Cleanup = function()
     if Disposer.disposed then return end
-    pcall(function()
-        local data = BuildSaveData()
-        -- Собираем кастомные позиции
-        local customData = {
-            WatermarkPos = UDim2ToTable(UI.Watermark.Instance.Position),
-            RecorderStatusPos = UDim2ToTable(UI.RecorderStatus.Instance.Position),
-            WatermarkVisible = UI.Watermark.Instance.Visible,
-            RecorderVisible = UI.RecorderStatus.Instance.Visible,
-        }
-        -- ui.lua сам сохранит свои Toggles/Sliders/Hotkeys
-        Window:SaveConfig() 
-        
-        -- Дописываем кастомные данные в конфиг (опционально, ui.lua уже сохранил основные)
-        -- Проще всего оставить сохранение позиций окон в основном скрипте, а UI - в ui.lua
-    end)
+    pcall(function() Window:SaveConfig() end)
+    
     for k in pairs(State) do if type(State[k]) == "boolean" then State[k] = false end end
     pcall(function() SetAntiAfkEnabled(false) end)
     pcall(function() if AntiAfk.conn then AntiAfk.conn:Disconnect(); AntiAfk.conn = nil end end)
     pcall(function() ResetBhopState() end)
     if Movement and Movement.Destroy then pcall(function() Movement:Destroy() end) end
+    if Predictor and Predictor.Destroy then pcall(function() Predictor:Destroy() end) end
     if BhopState.HumStateConn then pcall(function() BhopState.HumStateConn:Disconnect() end); BhopState.HumStateConn = nil end
-    pcall(DestroyPred)
+    
     Disposer:dispose()
     if Window then pcall(function() Window:Destroy() end) end
     if ENV[ENV_CLEANUP_KEY] == Cleanup then ENV[ENV_CLEANUP_KEY] = nil end
